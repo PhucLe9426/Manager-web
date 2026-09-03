@@ -57,10 +57,10 @@ jobs:
           pip install -r backend/requirements.txt pytest
 
       - name: Kiểm tra và test FastAPI
+        working-directory: backend
         run: |
-          python -m compileall -q backend/app
-          pytest -q backend/tests
+          python -m compileall -q app
+          python -m pytest -q tests
 
       - name: Kiểm tra Docker Compose
         run: docker compose config --quiet
-

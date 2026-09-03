@@ -1,4 +1,4 @@
-from backend.app.main import normalize_website_address
+from app.main import normalize_website_address
 
 
 def test_accepts_plain_domain():
@@ -28,4 +28,3 @@ def test_rejects_unsupported_protocol():
 
 def test_rejects_credentials_in_url():
     assert normalize_website_address("https://admin:secret@itsystems.vn/") is None
-
