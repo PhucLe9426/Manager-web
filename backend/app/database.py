@@ -35,6 +35,16 @@ def connection():
 
 def ensure_scan_queue_schema() -> None:
     with connection() as conn:
+        # Cho phép theo dõi nhiều URL/trang khác nhau trên cùng một tên miền.
+        conn.execute(
+            "ALTER TABLE websites DROP CONSTRAINT IF EXISTS websites_domain_key"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_websites_url ON websites(url)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_websites_domain ON websites(domain)"
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS scan_jobs (
@@ -59,4 +69,3 @@ def ensure_scan_queue_schema() -> None:
             ON monitoring_checks(website_id, check_type, checked_at DESC)
             """
         )
-

@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS customers (
 CREATE TABLE IF NOT EXISTS websites (
   id BIGSERIAL PRIMARY KEY,
   customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  domain VARCHAR(253) NOT NULL UNIQUE,
-  url TEXT NOT NULL,
+  domain VARCHAR(253) NOT NULL,
+  url TEXT NOT NULL UNIQUE,
   platform VARCHAR(50) NOT NULL DEFAULT 'wordpress',
   status VARCHAR(30) NOT NULL DEFAULT 'monitoring',
   performance_score SMALLINT,
@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS scan_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_websites_customer ON websites(customer_id);
+CREATE INDEX IF NOT EXISTS idx_websites_domain ON websites(domain);
 CREATE INDEX IF NOT EXISTS idx_websites_status ON websites(status);
 CREATE INDEX IF NOT EXISTS idx_checks_website_time ON monitoring_checks(website_id, checked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_checks_website_type_time ON monitoring_checks(website_id, check_type, checked_at DESC);

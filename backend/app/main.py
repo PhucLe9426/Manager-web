@@ -1,5 +1,6 @@
 import re
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,33 @@ DOMAIN_PATTERN = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$", re.IGNORECASE)
 
 def message(text: str, status_code: int) -> JSONResponse:
     return JSONResponse({"message": text}, status_code=status_code)
+
+
+def normalize_website_address(value: str | None) -> tuple[str, str] | None:
+    raw_value = (value or "").strip()
+    if not raw_value:
+        return None
+
+    candidate = raw_value if re.match(r"^https?://", raw_value, re.IGNORECASE) else f"https://{raw_value}"
+    try:
+        parsed = urlsplit(candidate)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme.lower() not in ("http", "https")
+            or parsed.username
+            or parsed.password
+            or not DOMAIN_PATTERN.fullmatch(hostname)
+        ):
+            return None
+        port = parsed.port
+    except ValueError:
+        return None
+
+    netloc = hostname if port is None else f"{hostname}:{port}"
+    normalized_url = urlunsplit(
+        (parsed.scheme.lower(), netloc, parsed.path or "", parsed.query, "")
+    )
+    return hostname, normalized_url
 
 
 @asynccontextmanager
@@ -160,11 +188,11 @@ def list_websites():
 
 @app.post("/api/websites", status_code=201)
 def create_website(payload: WebsiteCreate):
-    domain = (payload.domain or "").strip().lower()
-    domain = re.sub(r"^https?://", "", domain).rstrip("/")
+    address = normalize_website_address(payload.domain)
     customer_id = payload.customerId
-    if not domain or not customer_id or customer_id <= 0 or not DOMAIN_PATTERN.fullmatch(domain):
-        return message("Khách hàng hoặc tên miền không hợp lệ.", 400)
+    if not address or not customer_id or customer_id <= 0:
+        return message("Khách hàng, tên miền hoặc URL không hợp lệ.", 400)
+    domain, website_url = address
 
     try:
         with connection() as conn:
@@ -180,7 +208,7 @@ def create_website(payload: WebsiteCreate):
                 VALUES (%s, %s, %s, 'scanning', NULL, 0, NULL)
                 RETURNING id, domain, url, status
                 """,
-                (customer_id, domain, f"https://{domain}"),
+                (customer_id, domain, website_url),
             ).fetchone()
             conn.execute(
                 """
@@ -193,7 +221,7 @@ def create_website(payload: WebsiteCreate):
             )
         return {"website": website}
     except UniqueViolation:
-        return message("Tên miền này đã tồn tại.", 409)
+        return message("URL này đã tồn tại.", 409)
     except ForeignKeyViolation:
         return message("Không tìm thấy khách hàng đã chọn.", 404)
     except Exception:
