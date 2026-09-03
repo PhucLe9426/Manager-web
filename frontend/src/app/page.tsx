@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type Website = {
   id: number;
@@ -57,6 +58,7 @@ function websiteAddress(site: Website) {
 }
 
 export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (typeof navItems)[number][0] }) {
+  const router = useRouter();
   const [websites, setWebsites] = useState<Website[]>(fallbackWebsites);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,9 +128,10 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
     ? scannedWebsites.reduce((total, site) => total + Number(site.uptimePercent), 0) / scannedWebsites.length
     : 0;
   const attentionCount = websites.filter((site) => site.status === "attention" || site.status === "failed").length;
-  const healthScore = scannedWebsites.length
-    ? Math.round(scannedWebsites.reduce((sum, site) => sum + (site.performanceScore ?? 0), 0) / scannedWebsites.length)
-    : 0;
+  const mobileScores = websites.map((site) => site.mobilePerformanceScore).filter((score): score is number => score !== null);
+  const desktopScores = websites.map((site) => site.desktopPerformanceScore).filter((score): score is number => score !== null);
+  const mobileHealthScore = mobileScores.length ? Math.round(mobileScores.reduce((sum, score) => sum + score, 0) / mobileScores.length) : null;
+  const desktopHealthScore = desktopScores.length ? Math.round(desktopScores.reduce((sum, score) => sum + score, 0) / desktopScores.length) : null;
   const pageInfo = {
     "Tổng quan": ["Trung tâm vận hành", "Tổng quan hệ thống", "Theo dõi tình trạng website và công việc của đội ngũ."],
     "Khách hàng": ["Quản lý dữ liệu", "Danh sách khách hàng", "Thông tin liên hệ, gói dịch vụ và website đang phụ trách."],
@@ -251,13 +254,13 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
               <div className="panel-head"><div><h2>Tình trạng website</h2><p>Uptime, hiệu năng và cảnh báo mới nhất</p></div><Link className="secondary" href="/websites">Xem tất cả <ChevronRight size={15} /></Link></div>
               <div className="panel-search-row"><label className="search table-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm website hoặc khách hàng..." /></label></div>
               <div className="table-wrap"><table><thead><tr><th>Website / Khách hàng</th><th>Trạng thái</th><th>Mobile</th><th>Máy tính</th><th>Uptime</th><th>Ghi chú</th></tr></thead><tbody>
-                {filtered.map((site) => <tr key={site.id}><td><div className="site-name"><span><Globe2 size={17} /></span><div><strong>{websiteAddress(site)}</strong><small>{site.customerName}</small></div></div></td><td><span className={`status ${site.status}`}>{statusLabel[site.status]}</span></td><td><Score value={site.mobilePerformanceScore} /></td><td><Score value={site.desktopPerformanceScore} /></td><td><strong>{site.lastCheckedAt ? `${Number(site.uptimePercent).toFixed(2)}%` : "—"}</strong><small>{site.status === "scanning" ? "Đang quét..." : site.lastCheckedAt ? "Đã cập nhật" : "Chưa quét"}</small></td><td><span className="muted">{site.status === "attention" ? "Có lỗi cần ưu tiên" : site.status === "watching" ? "Cần theo dõi" : site.status === "scanning" ? "Đang chạy kiểm tra" : site.status === "monitoring" ? "Chờ lần quét đầu" : site.status === "failed" ? "Hãy thử quét lại" : "Không có lỗi mới"}</span></td></tr>)}
+                {filtered.map((site) => <tr className="clickable-row" key={site.id} tabIndex={0} role="link" aria-label={`Xem chi tiết ${websiteAddress(site)}`} onClick={() => router.push(`/websites/${site.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/websites/${site.id}`); } }}><td><div className="site-name"><span><Globe2 size={17} /></span><div><strong>{websiteAddress(site)}</strong><small>{site.customerName}</small></div></div></td><td><span className={`status ${site.status}`}>{statusLabel[site.status]}</span></td><td><Score value={site.mobilePerformanceScore} /></td><td><Score value={site.desktopPerformanceScore} /></td><td><strong>{site.lastCheckedAt ? `${Number(site.uptimePercent).toFixed(2)}%` : "—"}</strong><small>{site.status === "scanning" ? "Đang quét..." : site.lastCheckedAt ? "Đã cập nhật" : "Chưa quét"}</small></td><td><span className="muted">{site.status === "attention" ? "Có lỗi cần ưu tiên" : site.status === "watching" ? "Cần theo dõi" : site.status === "scanning" ? "Đang chạy kiểm tra" : site.status === "monitoring" ? "Chờ lần quét đầu" : site.status === "failed" ? "Hãy thử quét lại" : "Không có lỗi mới"}</span></td></tr>)}
                 {!loading && filtered.length === 0 && <tr><td colSpan={6}><div className="empty-state"><Globe2 size={25} /><strong>Chưa có website</strong><span>Bấm “Thêm website” để tạo dữ liệu đầu tiên.</span></div></td></tr>}
               </tbody></table></div>
             </article>
 
             <div className="right-column">
-              <article className="health-card"><div><h2>Sức khỏe hệ thống</h2><Gauge size={21} /></div><p>Tổng hợp {websites.length} website</p><section><strong>{scannedWebsites.length ? healthScore : "—"}</strong><span>{scannedWebsites.length ? "Đang theo dõi" : "Chưa có dữ liệu"}</span></section><div className="progress"><i style={{ width: `${healthScore}%` }} /></div><footer><span><b>{websites.filter((site) => site.status === "healthy").length}</b>Ổn định</span><span><b>{websites.filter((site) => site.status === "watching" || site.status === "scanning").length}</b>Cần theo dõi</span><span><b>{attentionCount}</b>Có lỗi</span></footer></article>
+              <article className="health-card"><div><h2>Sức khỏe hệ thống</h2><Gauge size={21} /></div><p>Điểm PageSpeed trung bình của {websites.length} website</p><div className="health-score-grid"><div className="health-score-item"><header><span>Mobile</span><strong>{mobileHealthScore ?? "—"}</strong></header><div className="progress"><i style={{ width: `${mobileHealthScore ?? 0}%` }} /></div></div><div className="health-score-item"><header><span>Desktop</span><strong>{desktopHealthScore ?? "—"}</strong></header><div className="progress"><i style={{ width: `${desktopHealthScore ?? 0}%` }} /></div></div></div><footer><span><b>{websites.filter((site) => site.status === "healthy").length}</b>Ổn định</span><span><b>{websites.filter((site) => site.status === "watching" || site.status === "scanning").length}</b>Cần theo dõi</span><span><b>{attentionCount}</b>Có lỗi</span></footer></article>
               <article className="panel tasks"><div className="panel-head"><div><h2>Việc sắp đến hạn</h2><p>Ưu tiên trong tuần</p></div><Clock3 size={18} /></div><div className="empty-state compact"><ListChecks size={23} /><strong>Chưa có công việc</strong><span>Công việc mới sẽ xuất hiện tại đây.</span></div></article>
             </div>
           </section>
