@@ -1,37 +1,73 @@
 # SiteOps Manager
 
-Bộ khung quản lý website khách hàng, gồm dashboard Next.js, API nội bộ, PostgreSQL, worker quét website và Docker Compose.
+Hệ thống quản lý website khách hàng đã được tách thành các dịch vụ độc lập:
 
-## Chạy bằng Docker
+- `frontend/`: giao diện Next.js, chạy ở cổng `3000`.
+- `backend/`: REST API FastAPI và kết nối PostgreSQL, chạy ở cổng `4000`.
+- `worker/`: tiến trình nền kiểm tra uptime, SSL và PageSpeed mobile/desktop.
+- `docker/postgres/`: schema PostgreSQL.
 
-```bash
+## Chạy toàn bộ bằng Docker
+
+```powershell
 docker compose up --build -d
-```
-
-Mở `http://localhost:3000`. Kiểm tra trạng thái:
-
-```bash
 docker compose ps
-curl http://localhost:3000/api/health
 ```
 
-Worker tự quét website mới và quét lại theo chu kỳ `SCAN_INTERVAL_MINUTES`. Kết quả gồm trạng thái truy cập, thời gian phản hồi, uptime 30 ngày, PageSpeed mobile/desktop và hạn SSL. Có thể thêm `PAGESPEED_API_KEY` vào file `.env` để dùng quota Google riêng.
+Mở giao diện tại `http://localhost:3000`. Tài liệu tương tác của API nằm tại
+`http://localhost:4000/docs`, và health check tại `http://localhost:4000/api/health`.
 
-## Chạy chế độ phát triển
+Frontend chuyển tiếp các đường dẫn `/api/*` sang FastAPI thông qua biến
+`API_INTERNAL_URL`, vì vậy trình duyệt không cần gọi chéo cổng và không gặp lỗi CORS.
 
-1. Khởi động riêng PostgreSQL: `docker compose up -d db`
-2. Sao chép `.env.example` thành `.env.local`.
-3. Chạy `npm install`, sau đó `npm run dev`.
+## Cấu hình
 
-## Cấu trúc chính
+Sao chép `.env.example` thành `.env`, sau đó điền:
 
-- `src/app`: dashboard và API route.
-- `src/lib/db.ts`: kết nối PostgreSQL.
-- `docker/postgres/init.sql`: schema, chỉ mục và dữ liệu mẫu.
-- `docker-compose.yml`: app, database, health-check và volume.
+- `POSTGRES_PASSWORD`: mật khẩu PostgreSQL.
+- `PAGESPEED_API_KEY`: API key Google PageSpeed (có thể để trống khi thử nghiệm).
+- `SCAN_INTERVAL_MINUTES`: chu kỳ quét lại, mặc định 360 phút.
 
-## Trước khi đưa lên máy chủ thật
+Không commit file `.env` lên GitHub.
 
-- Đổi `POSTGRES_PASSWORD` bằng secret mạnh.
-- Bổ sung đăng nhập, phân quyền và nhật ký thao tác.
-- Cấu hình HTTPS/reverse proxy, backup volume và giám sát định kỳ.
+## Chạy từng phần khi phát triển
+
+Khởi động database:
+
+```powershell
+docker compose up -d db
+```
+
+Backend FastAPI:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:DATABASE_URL="postgres://siteops:siteops_dev_change@localhost:5432/siteops"
+uvicorn app.main:app --reload --port 4000
+```
+
+Frontend Next.js (mở terminal khác):
+
+```powershell
+cd frontend
+npm install
+$env:API_INTERNAL_URL="http://localhost:4000"
+npm run dev
+```
+
+Worker thường nên chạy bằng Docker để giữ môi trường giống production:
+
+```powershell
+docker compose up -d worker
+```
+
+## Trước khi triển khai thật
+
+- Đổi mật khẩu PostgreSQL và lưu secret ngoài mã nguồn.
+- Bổ sung đăng nhập, phân quyền và audit log.
+- Đặt reverse proxy HTTPS phía trước frontend/backend.
+- Thiết lập backup volume PostgreSQL và giám sát container.
+

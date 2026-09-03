@@ -2,6 +2,5 @@ node_modules
 .next
 .git
 .env*
-.npm-cache
 npm-debug.log*
 README.md

@@ -1,0 +1,13 @@
+{
+  "name": "siteops-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node worker.mjs"
+  },
+  "dependencies": {
+    "postgres": "3.4.7"
+  }
+}
+

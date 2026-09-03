@@ -5,3 +5,6 @@ node_modules
 npm-debug.log*
 .npm-cache
 *.tsbuildinfo
+__pycache__
+*.py[cod]
+.venv
