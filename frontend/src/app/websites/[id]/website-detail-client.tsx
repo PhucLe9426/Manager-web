@@ -4,9 +4,10 @@ import Link from "next/link";
 import {
   Activity, ArrowLeft, Bell, CheckCircle2, CircleUserRound, Clock3,
   ExternalLink, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks,
-  Menu, RefreshCw, ShieldCheck, UsersRound, XCircle,
+  Menu, Moon, RefreshCw, ShieldCheck, Sun, UsersRound, XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTheme } from "@/hooks/use-theme";
 
 type Check = {
   id: number; checkType: string; status: string; responseTimeMs: number | null;
@@ -38,6 +39,7 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 }
 
 export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
+  const { theme, toggleTheme } = useTheme();
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState("");
   const [queuing, setQueuing] = useState(false);
@@ -98,7 +100,7 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
 
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? "open" : ""} ${sidebarCollapsed ? "collapsed" : ""}`}><div className="brand"><span className="brand-mark"><Activity size={21} /></span><span className="brand-copy"><strong>SiteOps</strong><small>Web Care Center</small></span><button type="button" className="sidebar-toggle" onClick={toggleSidebar} aria-label={sidebarCollapsed ? "Mở rộng thanh điều hướng" : "Thu gọn thanh điều hướng"} title={sidebarCollapsed ? "Mở rộng" : "Thu gọn"}><Menu size={21} /></button></div><nav><p>Vận hành</p>{navigation.map(([label, Icon, href]) => <Link className={label === "Website" ? "active" : ""} href={href} key={label} onClick={() => setMenuOpen(false)} title={sidebarCollapsed ? label : undefined}><Icon size={17} /><span className="nav-label">{label}</span></Link>)}</nav><div className="sidebar-note"><ShieldCheck size={17} /><strong>Hệ thống an toàn</strong><span>Docker và PostgreSQL đang hoạt động</span></div></aside>
-    <div className="content"><header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở trình đơn"><Menu size={20} /></button><Link className="back-link" href="/websites"><ArrowLeft size={17} />Danh sách website</Link><div className="user-area"><button className="icon-button notification" aria-label="Thông báo"><Bell size={18} /><i /></button><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div></header>
+    <div className="content"><header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở trình đơn"><Menu size={20} /></button><Link className="back-link" href="/websites"><ArrowLeft size={17} />Danh sách website</Link><div className="user-area"><button type="button" className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"} title={theme === "dark" ? "Chế độ sáng" : "Chế độ tối"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button notification" aria-label="Thông báo"><Bell size={18} /><i /></button><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div></header>
       <main className="detail-main">
         <section className="detail-heading"><div><div className="detail-domain"><Globe2 size={22} /><span><h1>{website.domain}</h1><p>{website.customerName} · {website.platform}</p></span></div><span className={`status ${website.status}`}>{labels[website.status] ?? website.status}</span></div><div className="detail-actions"><a className="secondary" href={website.url} target="_blank" rel="noreferrer">Mở website <ExternalLink size={15} /></a><button className="primary" disabled={pageSpeedPending || queuing} onClick={() => void scanNow()}><RefreshCw size={16} className={pageSpeedPending ? "spin" : ""} />{pageSpeedPending ? "Đang quét" : "Quét lại"}</button></div></section>
         {error && <div className="notice error">{error}</div>}

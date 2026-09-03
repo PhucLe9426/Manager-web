@@ -3,11 +3,12 @@
 import {
   Activity, AlertTriangle, Bell, CheckCircle2, ChevronRight, CircleUserRound,
   Clock3, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks, Menu,
-  Pencil, Plus, RefreshCw, Search, Server, ShieldCheck, UsersRound, X,
+  Moon, Pencil, Plus, RefreshCw, Search, Server, ShieldCheck, Sun, UsersRound, X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTheme } from "@/hooks/use-theme";
 
 type Website = {
   id: number;
@@ -59,6 +60,7 @@ function websiteAddress(site: Website) {
 
 export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (typeof navItems)[number][0] }) {
   const router = useRouter();
+  const { theme, toggleTheme } = useTheme();
   const [websites, setWebsites] = useState<Website[]>(fallbackWebsites);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +72,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
   const [modalError, setModalError] = useState("");
   const [activePage] = useState<(typeof navItems)[number][0]>(initialPage);
   const [scanningIds, setScanningIds] = useState<number[]>([]);
+  const [scanningAll, setScanningAll] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
   const loadWebsites = useCallback(async () => {
@@ -201,6 +204,23 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
     }
   }
 
+  async function queueAllScans() {
+    if (scanningAll || websites.length === 0) return;
+    setScanningAll(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/websites/scan-all", { method: "POST" });
+      const result = (await response.json()) as { message?: string };
+      if (!response.ok) throw new Error(result.message ?? "Không thể quét toàn bộ website.");
+      setMessage(result.message ?? "Đã đưa toàn bộ website vào hàng đợi quét.");
+      await loadWebsites();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Không thể quét toàn bộ website.");
+    } finally {
+      setScanningAll(false);
+    }
+  }
+
   useEffect(() => {
     const context = (document as Document & { modelContext?: { registerTool: (tool: object, options?: { signal?: AbortSignal }) => void | Promise<void> } }).modelContext;
     if (!context?.registerTool) return;
@@ -234,11 +254,11 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
       <div className="content">
         <header className="topbar">
           <button className="icon-button mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở trình đơn"><Menu size={20} /></button>
-          <div className="user-area"><button className="icon-button notification" aria-label="Thông báo"><Bell size={18} /><i /></button><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div>
+          <div className="user-area"><button type="button" className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"} title={theme === "dark" ? "Chế độ sáng" : "Chế độ tối"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button notification" aria-label="Thông báo"><Bell size={18} /><i /></button><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div>
         </header>
 
         <main>
-          <section className="heading"><div><p>{pageInfo[0]}</p><h1>{pageInfo[1]}</h1><span>{pageInfo[2]}</span></div>{activePage === "Khách hàng" ? <button className="primary" onClick={() => { setEditingCustomer(null); setModalType("customer"); }}><Plus size={17} />Thêm khách hàng</button> : (activePage === "Tổng quan" || activePage === "Website") ? <button className="primary" onClick={() => customers.length ? setModalType("website") : setMessage("Hãy tạo khách hàng trước khi thêm website.")}><Plus size={17} />Thêm website</button> : null}</section>
+          <section className="heading"><div><p>{pageInfo[0]}</p><h1>{pageInfo[1]}</h1><span>{pageInfo[2]}</span></div>{activePage === "Khách hàng" ? <button className="primary" onClick={() => { setEditingCustomer(null); setModalType("customer"); }}><Plus size={17} />Thêm khách hàng</button> : (activePage === "Tổng quan" || activePage === "Website") ? <div className="heading-actions">{activePage === "Website" && <button className="secondary bulk-scan" type="button" disabled={scanningAll || websites.length === 0} onClick={() => void queueAllScans()}><RefreshCw size={17} className={scanningAll ? "spin" : ""} />{scanningAll ? "Đang xếp hàng..." : "Quét toàn bộ"}</button>}<button className="primary" onClick={() => customers.length ? setModalType("website") : setMessage("Hãy tạo khách hàng trước khi thêm website.")}><Plus size={17} />Thêm website</button></div> : null}</section>
           {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label="Đóng"><X size={15} /></button></div>}
 
           {activePage === "Tổng quan" ? <>
@@ -254,7 +274,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
               <div className="panel-head"><div><h2>Tình trạng website</h2><p>Uptime, hiệu năng và cảnh báo mới nhất</p></div><Link className="secondary" href="/websites">Xem tất cả <ChevronRight size={15} /></Link></div>
               <div className="panel-search-row"><label className="search table-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm website hoặc khách hàng..." /></label></div>
               <div className="table-wrap"><table><thead><tr><th>Website / Khách hàng</th><th>Trạng thái</th><th>Mobile</th><th>Máy tính</th><th>Uptime</th><th>Ghi chú</th></tr></thead><tbody>
-                {filtered.map((site) => <tr className="clickable-row" key={site.id} tabIndex={0} role="link" aria-label={`Xem chi tiết ${websiteAddress(site)}`} onClick={() => router.push(`/websites/${site.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/websites/${site.id}`); } }}><td><div className="site-name"><span><Globe2 size={17} /></span><div><strong>{websiteAddress(site)}</strong><small>{site.customerName}</small></div></div></td><td><span className={`status ${site.status}`}>{statusLabel[site.status]}</span></td><td><Score value={site.mobilePerformanceScore} /></td><td><Score value={site.desktopPerformanceScore} /></td><td><strong>{site.lastCheckedAt ? `${Number(site.uptimePercent).toFixed(2)}%` : "—"}</strong><small>{site.status === "scanning" ? "Đang quét..." : site.lastCheckedAt ? "Đã cập nhật" : "Chưa quét"}</small></td><td><span className="muted">{site.status === "attention" ? "Có lỗi cần ưu tiên" : site.status === "watching" ? "Cần theo dõi" : site.status === "scanning" ? "Đang chạy kiểm tra" : site.status === "monitoring" ? "Chờ lần quét đầu" : site.status === "failed" ? "Hãy thử quét lại" : "Không có lỗi mới"}</span></td></tr>)}
+                {filtered.map((site) => <tr className={`clickable-row row-${site.status}`} key={site.id} tabIndex={0} role="link" aria-label={`Xem chi tiết ${websiteAddress(site)}`} onClick={() => router.push(`/websites/${site.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/websites/${site.id}`); } }}><td><div className="site-name"><span><Globe2 size={17} /></span><div><strong>{websiteAddress(site)}</strong><small>{site.customerName}</small></div></div></td><td><span className={`status ${site.status}`}>{statusLabel[site.status]}</span></td><td><Score value={site.mobilePerformanceScore} /></td><td><Score value={site.desktopPerformanceScore} /></td><td><strong>{site.lastCheckedAt ? `${Number(site.uptimePercent).toFixed(2)}%` : "—"}</strong><small>{site.status === "scanning" ? "Đang quét..." : site.lastCheckedAt ? "Đã cập nhật" : "Chưa quét"}</small></td><td><span className="muted">{site.status === "attention" ? "Có lỗi cần ưu tiên" : site.status === "watching" ? "Cần theo dõi" : site.status === "scanning" ? "Đang chạy kiểm tra" : site.status === "monitoring" ? "Chờ lần quét đầu" : site.status === "failed" ? "Hãy thử quét lại" : "Không có lỗi mới"}</span></td></tr>)}
                 {!loading && filtered.length === 0 && <tr><td colSpan={6}><div className="empty-state"><Globe2 size={25} /><strong>Chưa có website</strong><span>Bấm “Thêm website” để tạo dữ liệu đầu tiên.</span></div></td></tr>}
               </tbody></table></div>
             </article>

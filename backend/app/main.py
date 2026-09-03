@@ -228,6 +228,51 @@ def create_website(payload: WebsiteCreate):
         return message("Không thể thêm website.", 500)
 
 
+@app.post("/api/websites/scan-all")
+def queue_all_website_scans():
+    with connection() as conn:
+        total = conn.execute("SELECT COUNT(*)::int AS total FROM websites").fetchone()["total"]
+        if total == 0:
+            return {"message": "Chưa có website để quét.", "total": 0, "queued": 0}
+
+        conn.execute(
+            """
+            INSERT INTO scan_jobs
+              (website_id, status, scheduled_at, attempts, last_error, updated_at)
+            SELECT id, 'queued', NOW(), 0, NULL, NOW()
+            FROM websites
+            WHERE TRUE
+            ON CONFLICT (website_id) DO UPDATE SET
+              status = 'queued', scheduled_at = NOW(), attempts = 0,
+              last_error = NULL, completed_at = NULL, updated_at = NOW()
+            WHERE scan_jobs.status <> 'running'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE websites
+            SET status = 'scanning', updated_at = NOW()
+            WHERE id IN (
+              SELECT website_id FROM scan_jobs WHERE status IN ('queued', 'running')
+            )
+            """
+        )
+        queued = conn.execute(
+            """
+            SELECT COUNT(*)::int AS total
+            FROM scan_jobs
+            WHERE status IN ('queued', 'running')
+              AND website_id IN (SELECT id FROM websites)
+            """
+        ).fetchone()["total"]
+
+    return {
+        "message": f"Đã đưa {total} website vào hàng đợi quét.",
+        "total": total,
+        "queued": queued,
+    }
+
+
 @app.get("/api/websites/{website_id}")
 def website_detail(website_id: int):
     if website_id <= 0:
