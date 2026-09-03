@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 from .database import close_pool, connection, ensure_scan_queue_schema, open_pool
@@ -33,6 +33,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/api/health")
@@ -272,4 +277,3 @@ def queue_website_scan(website_id: int):
             (website_id,),
         )
     return {"message": "Đã đưa website vào hàng đợi quét.", "job": job}
-
