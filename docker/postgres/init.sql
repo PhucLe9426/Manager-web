@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS websites (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE websites ADD COLUMN IF NOT EXISTS wp_username VARCHAR(190);
+ALTER TABLE websites ADD COLUMN IF NOT EXISTS wp_application_password TEXT;
+ALTER TABLE websites ADD COLUMN IF NOT EXISTS wp_connected_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS monitoring_checks (
   id BIGSERIAL PRIMARY KEY,
   website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
@@ -91,3 +95,14 @@ CREATE INDEX IF NOT EXISTS idx_checks_website_type_time ON monitoring_checks(web
 CREATE INDEX IF NOT EXISTS idx_tasks_status_due ON maintenance_tasks(status, due_at);
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_queue ON scan_jobs(status, scheduled_at);
+
+CREATE TABLE IF NOT EXISTS wordpress_security_scans (
+  id BIGSERIAL PRIMARY KEY,
+  website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  results JSONB NOT NULL DEFAULT '{}'::jsonb,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wp_security_scans_website_time
+ON wordpress_security_scans(website_id, checked_at DESC);

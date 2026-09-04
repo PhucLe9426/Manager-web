@@ -18,3 +18,12 @@ class WebsiteCreate(BaseModel):
     domain: str | None = None
     customerId: int | None = None
 
+
+class WordPressConnectionCreate(BaseModel):
+    username: str | None = None
+    applicationPassword: str | None = None
+
+
+class WordPressPluginUpdate(BaseModel):
+    plugin: str | None = None
+    status: Literal["active", "inactive"]

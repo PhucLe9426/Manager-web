@@ -35,6 +35,15 @@ def connection():
 
 def ensure_scan_queue_schema() -> None:
     with connection() as conn:
+        conn.execute(
+            "ALTER TABLE websites ADD COLUMN IF NOT EXISTS wp_username VARCHAR(190)"
+        )
+        conn.execute(
+            "ALTER TABLE websites ADD COLUMN IF NOT EXISTS wp_application_password TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE websites ADD COLUMN IF NOT EXISTS wp_connected_at TIMESTAMPTZ"
+        )
         # Cho phép theo dõi nhiều URL/trang khác nhau trên cùng một tên miền.
         conn.execute(
             "ALTER TABLE websites DROP CONSTRAINT IF EXISTS websites_domain_key"
@@ -62,6 +71,23 @@ def ensure_scan_queue_schema() -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_scan_jobs_queue ON scan_jobs(status, scheduled_at)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wordpress_security_scans (
+              id BIGSERIAL PRIMARY KEY,
+              website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+              summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+              results JSONB NOT NULL DEFAULT '{}'::jsonb,
+              checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wp_security_scans_website_time
+            ON wordpress_security_scans(website_id, checked_at DESC)
+            """
         )
         conn.execute(
             """

@@ -4,9 +4,10 @@ import Link from "next/link";
 import {
   Activity, ArrowLeft, Bell, CheckCircle2, CircleUserRound, Clock3,
   ExternalLink, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks,
-  Menu, Moon, RefreshCw, ShieldCheck, Sun, UsersRound, XCircle,
+  KeyRound, Menu, Moon, Palette, Plug, RefreshCw, ShieldCheck, Sun,
+  UsersRound, X, XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "@/hooks/use-theme";
 
 type Check = {
@@ -24,18 +25,56 @@ type Detail = {
   checks: Check[];
   job: { status: string; attempts: number; startedAt: string | null; completedAt: string | null; lastError: string | null } | null;
 };
+type WordPressPlugin = {
+  plugin: string; status: "active" | "inactive"; name: string; version: string;
+  author?: { rendered?: string } | string;
+};
+type WordPressTheme = {
+  stylesheet: string; status: "active" | "inactive"; version: string;
+  name: { rendered?: string } | string;
+};
+type WordPressData = {
+  connected: boolean; username?: string; connectedAt?: string;
+  profile?: { id?: number; name?: string; roles?: string[] };
+  plugins: WordPressPlugin[]; themes: WordPressTheme[];
+};
+type CachedWordPressData = { savedAt: number; data: WordPressData };
+type SecurityPlugin = {
+  plugin: string; name: string; version: string; active: boolean;
+  source: "wordpress.org" | "third-party-or-custom";
+  licenseStatus: "not-required" | "unknown";
+  integrity: "verified" | "modified" | "unknown";
+  risk: "low" | "medium" | "high" | "unknown";
+  findings: string[]; changedFiles: string[];
+  codeSignals: { type: string; level: string; file: string }[];
+};
+type SecurityScan = {
+  id?: number; checkedAt?: string; scannedAt?: string; agentVersion?: string;
+  wordpressVersion?: string; phpVersion?: string; plugins: SecurityPlugin[];
+  summary: { total: number; verified: number; modified: number; warning: number; unknown: number };
+};
 
 const navigation = [
   ["Tổng quan", LayoutDashboard, "/"], ["Khách hàng", UsersRound, "/customers"],
   ["Website", Globe2, "/websites"], ["Công việc", ListChecks, "/tasks"], ["Báo cáo", FileBarChart, "/reports"],
 ] as const;
 const labels: Record<string, string> = { healthy: "Ổn định", attention: "Cần xử lý", watching: "Theo dõi", scanning: "Đang quét", monitoring: "Đang thiết lập", failed: "Quét thất bại" };
+const integrityLabels: Record<string, string> = { verified: "Checksum hợp lệ", modified: "File đã thay đổi", unknown: "Chưa xác định" };
+const riskLabels: Record<string, string> = { low: "Rủi ro thấp", medium: "Cần kiểm tra", high: "Rủi ro cao", unknown: "Chưa xác định" };
+const WORDPRESS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function wordpressCacheKey(websiteId: number) {
+  return `siteops-wordpress-${websiteId}`;
+}
 
 function formatDate(value: string | null) {
   return value ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Chưa có";
 }
 function Metric({ label, value, note }: { label: string; value: string; note: string }) {
   return <article className="detail-metric"><p>{label}</p><strong>{value}</strong><span>{note}</span></article>;
+}
+function rendered(value: { rendered?: string } | string | undefined) {
+  return typeof value === "string" ? value : value?.rendered ?? "Không rõ";
 }
 
 export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
@@ -45,6 +84,14 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
   const [queuing, setQueuing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [wordpress, setWordpress] = useState<WordPressData | null>(null);
+  const [wordpressLoading, setWordpressLoading] = useState(true);
+  const [wordpressError, setWordpressError] = useState("");
+  const [wordpressModal, setWordpressModal] = useState(false);
+  const [wordpressSaving, setWordpressSaving] = useState(false);
+  const [changingPlugin, setChangingPlugin] = useState("");
+  const [securityScan, setSecurityScan] = useState<SecurityScan | null>(null);
+  const [securityScanning, setSecurityScanning] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/websites/${websiteId}`, { cache: "no-store" });
@@ -53,11 +100,58 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
     setData(result);
   }, [websiteId]);
 
+  const loadWordPress = useCallback(async (force = false) => {
+    if (!force) {
+      try {
+        const cachedRaw = window.localStorage.getItem(wordpressCacheKey(websiteId));
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw) as CachedWordPressData;
+          if (cached.data && Date.now() - cached.savedAt < WORDPRESS_CACHE_TTL_MS) {
+            setWordpress(cached.data);
+            setWordpressLoading(false);
+            return;
+          }
+          window.localStorage.removeItem(wordpressCacheKey(websiteId));
+        }
+      } catch {
+        window.localStorage.removeItem(wordpressCacheKey(websiteId));
+      }
+    }
+
+    setWordpressLoading(true);
+    setWordpressError("");
+    try {
+      const response = await fetch(`/api/websites/${websiteId}/wordpress`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "Không thể tải dữ liệu WordPress.");
+      setWordpress(result);
+      window.localStorage.setItem(
+        wordpressCacheKey(websiteId),
+        JSON.stringify({ savedAt: Date.now(), data: result } satisfies CachedWordPressData),
+      );
+    } catch (reason) {
+      setWordpressError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu WordPress.");
+    } finally {
+      setWordpressLoading(false);
+    }
+  }, [websiteId]);
+
   useEffect(() => {
     void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."));
     const timer = window.setInterval(() => void load().catch(() => undefined), 10000);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  useEffect(() => { void loadWordPress(); }, [loadWordPress]);
+
+  useEffect(() => {
+    void fetch(`/api/websites/${websiteId}/wordpress/security-scan/latest`, { cache: "no-store" })
+      .then(async (response) => {
+        const result = await response.json();
+        if (response.ok && result.scan) setSecurityScan({ ...result.scan.results, id: result.scan.id, checkedAt: result.scan.checkedAt });
+      })
+      .catch(() => undefined);
+  }, [websiteId]);
 
   useEffect(() => {
     setSidebarCollapsed(window.localStorage.getItem("siteops-sidebar-collapsed") === "true");
@@ -92,6 +186,85 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
     } finally { setQueuing(false); }
   }
 
+  async function connectWordPress(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWordpressSaving(true);
+    setWordpressError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch(`/api/websites/${websiteId}/wordpress/connection`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: form.get("username"),
+          applicationPassword: form.get("applicationPassword"),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "Không thể kết nối WordPress.");
+      setWordpressModal(false);
+      window.localStorage.removeItem(wordpressCacheKey(websiteId));
+      await loadWordPress(true);
+    } catch (reason) {
+      setWordpressError(reason instanceof Error ? reason.message : "Không thể kết nối WordPress.");
+    } finally {
+      setWordpressSaving(false);
+    }
+  }
+
+  async function disconnectWordPress() {
+    if (!window.confirm("Ngắt kết nối WordPress của website này?")) return;
+    const response = await fetch(`/api/websites/${websiteId}/wordpress/connection`, { method: "DELETE" });
+    const result = await response.json();
+    if (!response.ok) { setWordpressError(result.message ?? "Không thể ngắt kết nối."); return; }
+    window.localStorage.removeItem(wordpressCacheKey(websiteId));
+    setWordpress({ connected: false, plugins: [], themes: [] });
+  }
+
+  async function togglePlugin(plugin: WordPressPlugin) {
+    setChangingPlugin(plugin.plugin);
+    setWordpressError("");
+    try {
+      const response = await fetch(`/api/websites/${websiteId}/wordpress/plugin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plugin: plugin.plugin,
+          status: plugin.status === "active" ? "inactive" : "active",
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "Không thể cập nhật plugin.");
+      await loadWordPress(true);
+    } catch (reason) {
+      setWordpressError(reason instanceof Error ? reason.message : "Không thể cập nhật plugin.");
+    } finally {
+      setChangingPlugin("");
+    }
+  }
+
+  async function scanPluginSecurity() {
+    setSecurityScanning(true);
+    setWordpressError("");
+    try {
+      const response = await fetch(`/scan-proxy/websites/${websiteId}`, { method: "POST" });
+      const raw = await response.text();
+      let result: { message?: string; scan?: SecurityScan } = {};
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(response.ok ? "Máy chủ trả về dữ liệu không hợp lệ." : `Máy chủ quét gặp lỗi HTTP ${response.status}.`);
+      }
+      if (!response.ok) throw new Error(result.message ?? "Không thể quét bảo mật plugin.");
+      if (!result.scan) throw new Error("Kết quả quét không hợp lệ.");
+      setSecurityScan(result.scan);
+    } catch (reason) {
+      setWordpressError(reason instanceof Error ? reason.message : "Không thể quét bảo mật plugin.");
+    } finally {
+      setSecurityScanning(false);
+    }
+  }
+
   if (error && !data) return <main className="detail-error"><XCircle /><h1>Không mở được website</h1><p>{error}</p><Link href="/websites">Quay lại danh sách</Link></main>;
   if (!data) return <main className="detail-loading"><RefreshCw className="spin" /><p>Đang tải kết quả quét...</p></main>;
   const { website, checks, job } = data;
@@ -107,8 +280,20 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
         <section className="detail-metrics"><Metric label="Uptime 30 ngày" value={website.lastCheckedAt ? `${Number(website.uptimePercent).toFixed(2)}%` : "—"} note="Từ các lần kiểm tra HTTP" /><Metric label="Thời gian phản hồi" value={latest.availability?.responseTimeMs ? `${latest.availability.responseTimeMs} ms` : "—"} note={`HTTP ${latest.availability?.details?.statusCode ?? "chưa có"}`} /><Metric label="SSL còn hạn" value={sslDays === null ? "—" : `${sslDays} ngày`} note={website.sslExpiresAt ? `Hết hạn ${formatDate(website.sslExpiresAt)}` : "Chưa có kết quả"} /><Metric label="Lần quét gần nhất" value={website.lastCheckedAt ? "Đã hoàn tất" : "Chưa quét"} note={formatDate(website.lastCheckedAt)} /></section>
         <section className="detail-grid"><article className="panel performance-panel"><div className="panel-head"><div><h2>PageSpeed Insights</h2><p>Kết quả Lighthouse gần nhất</p></div><Gauge size={19} /></div><div className="strategy-grid">{[["Mobile", latest.mobile], ["Desktop", latest.desktop]].map(([name, raw]) => { const check = raw as Check | undefined; return <div className="strategy" key={name as string}><header><strong>{name as string}</strong><span className={`big-score ${(check?.performanceScore ?? 0) >= 90 ? "good" : (check?.performanceScore ?? 0) >= 50 ? "warn" : "bad"}`}>{check?.performanceScore ?? "—"}</span></header><dl><div><dt>FCP</dt><dd>{check?.details?.fcpSeconds ? `${check.details.fcpSeconds.toFixed(2)}s` : "—"}</dd></div><div><dt>LCP</dt><dd>{check?.lcpSeconds ? `${check.lcpSeconds.toFixed(2)}s` : "—"}</dd></div><div><dt>CLS</dt><dd>{check?.clsScore ?? "—"}</dd></div></dl><small>{check ? formatDate(check.checkedAt) : "Chưa có kết quả"}</small></div>; })}</div></article>
           <article className="panel scan-info"><div className="panel-head"><div><h2>Trạng thái lần quét</h2><p>Thông tin từ worker</p></div><Clock3 size={18} /></div><dl><div><dt>Trạng thái job</dt><dd>{job?.status ?? "Chưa tạo"}</dd></div><div><dt>Số lần thực hiện</dt><dd>{job?.attempts ?? 0}</dd></div><div><dt>Bắt đầu</dt><dd>{formatDate(job?.startedAt ?? null)}</dd></div><div><dt>Hoàn thành</dt><dd>{formatDate(job?.completedAt ?? null)}</dd></div></dl>{job?.lastError && <div className="scan-error"><strong>Lỗi gần nhất</strong><p>{job.lastError}</p></div>}</article></section>
+        <section className="panel wordpress-panel">
+          <div className="panel-head"><div><h2>Quản lý WordPress</h2><p>Theme và kết nối quản trị</p></div><div className="wordpress-actions">{wordpress?.connected && <><button className="secondary" type="button" disabled={wordpressLoading} onClick={() => void loadWordPress(true)}><RefreshCw size={15} className={wordpressLoading ? "spin" : ""} />Làm mới</button><button className="secondary danger-button" type="button" onClick={() => void disconnectWordPress()}>Ngắt kết nối</button></>}<Plug size={19} /></div></div>
+          {wordpressError && <div className="wordpress-error"><XCircle size={17} /><span>{wordpressError}</span></div>}
+          {wordpressLoading && !wordpress && <div className="wordpress-empty"><RefreshCw className="spin" size={23} /><strong>Đang kiểm tra kết nối WordPress...</strong></div>}
+          {!wordpressLoading && !wordpress?.connected && <div className="wordpress-empty"><span className="wordpress-logo">W</span><strong>Website chưa kết nối WordPress</strong><p>Tạo Application Password trong tài khoản quản trị WordPress, sau đó kết nối tại đây.</p><button className="primary" type="button" onClick={() => { setWordpressError(""); setWordpressModal(true); }}><KeyRound size={16} />Kết nối WordPress</button></div>}
+          {wordpress?.connected && <div className="wordpress-content"><div className="wordpress-summary"><span className="wordpress-logo small">W</span><div><strong>Đã kết nối</strong><small>Tài khoản {wordpress.profile?.name ?? wordpress.username} · {wordpress.themes.length} theme</small></div><span className="status healthy">Hoạt động</span></div><div className="wordpress-columns single-column"><section><header><div><Palette size={18} /><strong>Theme</strong></div><span>{wordpress.themes.length} theme</span></header><div className="wordpress-list">{wordpress.themes.map((themeItem) => <article key={themeItem.stylesheet}><div><strong>{rendered(themeItem.name)}</strong><small>Phiên bản {themeItem.version}</small></div><span className={`theme-status ${themeItem.status}`}>{themeItem.status === "active" ? "Đang dùng" : "Chưa dùng"}</span></article>)}{wordpress.themes.length === 0 && <p className="muted">Không tìm thấy theme.</p>}</div></section></div></div>}
+        </section>
+        {wordpress?.connected && <section className="panel security-panel"><div className="panel-head"><div><h2>Kiểm tra plugin bản quyền & mã nguồn</h2><p>So sánh checksum và tìm dấu hiệu mã cần kiểm tra</p></div><div className="wordpress-actions"><a className="secondary" href="/downloads/siteops-security-agent-v14.zip" download="siteops-security-agent-v14.zip">Cài Agent 1.4</a><button className="primary" type="button" disabled={securityScanning} onClick={() => void scanPluginSecurity()}><ShieldCheck size={16} className={securityScanning ? "spin" : ""} />{securityScanning ? "Đang quét..." : "Quét bảo mật plugin"}</button></div></div>
+          {!securityScan && <div className="security-intro"><ShieldCheck size={28} /><strong>Chưa có kết quả kiểm tra</strong><p>Tải và kích hoạt SiteOps Agent trên WordPress, sau đó bấm “Quét bảo mật plugin”. Kết quả chỉ là đánh giá kỹ thuật, không thay thế xác nhận license từ nhà cung cấp.</p></div>}
+          {securityScan && <><div className="security-summary"><article><span>Tổng plugin</span><strong>{securityScan.summary.total}</strong></article><article className="safe"><span>Checksum hợp lệ</span><strong>{securityScan.summary.verified}</strong></article><article className="warn"><span>Cần kiểm tra</span><strong>{securityScan.summary.warning}</strong></article><article className="danger"><span>File thay đổi</span><strong>{securityScan.summary.modified}</strong></article><article><span>Chưa xác định</span><strong>{securityScan.summary.unknown}</strong></article></div><div className="table-wrap security-table"><table><thead><tr><th>Plugin</th><th>Nguồn / bản quyền</th><th>Tính toàn vẹn</th><th>Mức rủi ro</th><th>Phát hiện</th></tr></thead><tbody>{securityScan.plugins.map((plugin) => <tr key={plugin.plugin}><td><strong>{plugin.name}</strong><small>Phiên bản {plugin.version} · {plugin.active ? "Đang bật" : "Đang tắt"}</small></td><td><span className="security-source">{plugin.source === "wordpress.org" ? "WordPress.org" : "Trả phí / tùy chỉnh"}</span><small>{plugin.licenseStatus === "not-required" ? "Không cần license trả phí" : "Cần xác minh với nhà cung cấp"}</small></td><td><span className={`security-badge ${plugin.integrity}`}>{integrityLabels[plugin.integrity]}</span></td><td><span className={`security-badge risk-${plugin.risk}`}>{riskLabels[plugin.risk]}</span></td><td><span className="finding-text">{plugin.findings[0] ?? "Không có dấu hiệu bất thường"}</span>{plugin.changedFiles.length > 0 && <small title={plugin.changedFiles.join("\n")}>{plugin.changedFiles.length} file cần xem</small>}</td></tr>)}</tbody></table></div><footer className="security-footer"><span>Agent {securityScan.agentVersion ?? "—"} · WordPress {securityScan.wordpressVersion ?? "—"} · PHP {securityScan.phpVersion ?? "—"}</span><span>Lần quét: {formatDate(securityScan.checkedAt ?? securityScan.scannedAt ?? null)}</span></footer></>}
+        </section>}
         <section className="panel history-panel"><div className="panel-head"><div><h2>Lịch sử kiểm tra</h2><p>{checks.length} bản ghi gần nhất</p></div><CheckCircle2 size={18} /></div><div className="table-wrap"><table><thead><tr><th>Thời gian</th><th>Loại kiểm tra</th><th>Kết quả</th><th>Điểm / Phản hồi</th></tr></thead><tbody>{checks.map((check) => <tr key={check.id}><td>{formatDate(check.checkedAt)}</td><td>{check.checkType}</td><td><span className={`check-result ${check.status}`}>{check.status === "ok" ? "Thành công" : "Có lỗi"}</span></td><td>{check.performanceScore !== null ? `${check.performanceScore}/100` : check.responseTimeMs ? `${check.responseTimeMs} ms` : check.details?.error ?? "—"}</td></tr>)}{checks.length === 0 && <tr><td colSpan={4}><div className="empty-state"><Activity size={24} /><strong>Chưa có lịch sử quét</strong><span>Bấm “Quét lại” để bắt đầu.</span></div></td></tr>}</tbody></table></div></section>
       </main>
     </div>
+    {wordpressModal && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setWordpressModal(false)}><form className="modal" onSubmit={connectWordPress}><div><h2>Kết nối WordPress</h2><button type="button" className="icon-button" onClick={() => setWordpressModal(false)} aria-label="Đóng"><X size={18} /></button></div>{wordpressError && <div className="form-error" role="alert"><XCircle size={16} /><span>{wordpressError}</span></div>}<label>Tên đăng nhập WordPress<input name="username" autoComplete="username" required placeholder="admin" /></label><label>Application Password<input name="applicationPassword" type="password" autoComplete="new-password" required placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" /></label><p>Trong WordPress: Người dùng → Hồ sơ → Mật khẩu ứng dụng. Kết nối chỉ hoạt động qua HTTPS và tài khoản cần quyền quản trị plugin.</p><footer><button type="button" className="secondary" onClick={() => setWordpressModal(false)}>Hủy</button><button className="primary" type="submit" disabled={wordpressSaving}>{wordpressSaving ? "Đang kiểm tra..." : "Kết nối"}</button></footer></form></div>}
   </div>;
 }

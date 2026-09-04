@@ -40,6 +40,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://siteops:${POSTGRES_PASSWORD:-siteops_dev_change}@db:5432/siteops
+      WORDPRESS_CREDENTIALS_KEY: ${WORDPRESS_CREDENTIALS_KEY:-siteops-dev-wordpress-key-change-me}
     ports:
       - "${API_PORT:-4000}:4000"
     depends_on:
