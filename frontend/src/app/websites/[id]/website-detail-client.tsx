@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import {
-  Activity, ArrowLeft, Bell, CheckCircle2, CircleUserRound, Clock3,
+  Activity, AlertTriangle, ArrowLeft, Bell, CheckCircle2, ChevronLeft, ChevronRight, CircleUserRound, Clock3,
   ExternalLink, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks,
-  KeyRound, Menu, Moon, Palette, Plug, RefreshCw, ShieldCheck, Sun,
+  FileText, KeyRound, Menu, Moon, Palette, Plug, RefreshCw, Search, ShieldCheck, Sun,
   UsersRound, X, XCircle,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -39,6 +39,23 @@ type WordPressData = {
   plugins: WordPressPlugin[]; themes: WordPressTheme[];
 };
 type CachedWordPressData = { savedAt: number; data: WordPressData };
+type SeoPost = {
+  id: number; title: string; slug: string; status: string; link?: string; editUrl: string;
+  date?: string; modified?: string; wordCount: number; titleLength: number; excerptLength: number;
+  featuredImage: boolean; imageCount: number; imagesMissingAlt: number; h1Count: number;
+  internalLinks: number; externalLinks: number; categoryCount: number; tagCount: number;
+  seoScore: number | null; internalScore: number; seoStatus: "good" | "warning" | "critical" | "unknown"; issues: string[];
+  rankMath: { available: boolean; score?: number | null; title?: string; description?: string; focusKeyword?: string };
+};
+type PostsSeoData = {
+  posts: SeoPost[];
+  summary: {
+    total: number; published: number; draft: number; needsAttention: number; averageScore: number | null; rankMathScored: number;
+    missingFeaturedImage: number; shortContent: number; rankMathDataAvailable: boolean;
+    totalAvailable: number; allPostsLoaded: boolean;
+  };
+};
+type CachedPostsSeoData = { savedAt: number; data: PostsSeoData };
 type SecurityPlugin = {
   plugin: string; name: string; version: string; active: boolean;
   source: "wordpress.org" | "third-party-or-custom";
@@ -61,10 +78,17 @@ const navigation = [
 const labels: Record<string, string> = { healthy: "Ổn định", attention: "Cần xử lý", watching: "Theo dõi", scanning: "Đang quét", monitoring: "Đang thiết lập", failed: "Quét thất bại" };
 const integrityLabels: Record<string, string> = { verified: "Checksum hợp lệ", modified: "File đã thay đổi", unknown: "Chưa xác định" };
 const riskLabels: Record<string, string> = { low: "Rủi ro thấp", medium: "Cần kiểm tra", high: "Rủi ro cao", unknown: "Chưa xác định" };
+const postStatusLabels: Record<string, string> = { publish: "Đã đăng", draft: "Bản nháp", pending: "Chờ duyệt", private: "Riêng tư", future: "Đã lên lịch" };
 const WORDPRESS_CACHE_TTL_MS = 10 * 60 * 1000;
+const POSTS_SEO_CACHE_TTL_MS = 5 * 60 * 1000;
+const POSTS_PER_PAGE = 20;
+const PLUGINS_PER_PAGE = 10;
 
 function wordpressCacheKey(websiteId: number) {
   return `siteops-wordpress-${websiteId}`;
+}
+function postsSeoCacheKey(websiteId: number) {
+  return `siteops-posts-seo-${websiteId}`;
 }
 
 function formatDate(value: string | null) {
@@ -92,6 +116,13 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
   const [changingPlugin, setChangingPlugin] = useState("");
   const [securityScan, setSecurityScan] = useState<SecurityScan | null>(null);
   const [securityScanning, setSecurityScanning] = useState(false);
+  const [securityPage, setSecurityPage] = useState(1);
+  const [postsSeo, setPostsSeo] = useState<PostsSeoData | null>(null);
+  const [postsSeoLoading, setPostsSeoLoading] = useState(false);
+  const [postsSeoError, setPostsSeoError] = useState("");
+  const [postSearch, setPostSearch] = useState("");
+  const [postStatus, setPostStatus] = useState("all");
+  const [postPage, setPostPage] = useState(1);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/websites/${websiteId}`, { cache: "no-store" });
@@ -136,6 +167,47 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
     }
   }, [websiteId]);
 
+  const loadPostsSeo = useCallback(async (force = false) => {
+    if (!force) {
+      try {
+        const cachedRaw = window.localStorage.getItem(postsSeoCacheKey(websiteId));
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw) as CachedPostsSeoData;
+          if (cached.data && Date.now() - cached.savedAt < POSTS_SEO_CACHE_TTL_MS) {
+            setPostsSeo(cached.data);
+            return;
+          }
+          window.localStorage.removeItem(postsSeoCacheKey(websiteId));
+        }
+      } catch {
+        window.localStorage.removeItem(postsSeoCacheKey(websiteId));
+      }
+    }
+
+    setPostsSeoLoading(true);
+    setPostsSeoError("");
+    try {
+      const response = await fetch(`/posts-seo-proxy/websites/${websiteId}`, { cache: "no-store" });
+      const raw = await response.text();
+      let result: PostsSeoData & { message?: string };
+      try {
+        result = JSON.parse(raw || "{}");
+      } catch {
+        throw new Error(`Máy chủ SEO trả về dữ liệu không hợp lệ (HTTP ${response.status}).`);
+      }
+      if (!response.ok) throw new Error(result.message ?? "Không thể tải bài viết WordPress.");
+      setPostsSeo(result);
+      window.localStorage.setItem(
+        postsSeoCacheKey(websiteId),
+        JSON.stringify({ savedAt: Date.now(), data: result } satisfies CachedPostsSeoData),
+      );
+    } catch (reason) {
+      setPostsSeoError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu SEO.");
+    } finally {
+      setPostsSeoLoading(false);
+    }
+  }, [websiteId]);
+
   useEffect(() => {
     void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."));
     const timer = window.setInterval(() => void load().catch(() => undefined), 10000);
@@ -143,6 +215,11 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
   }, [load]);
 
   useEffect(() => { void loadWordPress(); }, [loadWordPress]);
+
+  useEffect(() => {
+    if (wordpress?.connected) void loadPostsSeo();
+    else if (wordpress && !wordpress.connected) setPostsSeo(null);
+  }, [loadPostsSeo, wordpress?.connected]);
 
   useEffect(() => {
     void fetch(`/api/websites/${websiteId}/wordpress/security-scan/latest`, { cache: "no-store" })
@@ -174,6 +251,34 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
     };
   }, [data]);
 
+  const filteredSeoPosts = useMemo(() => {
+    const keyword = postSearch.trim().toLocaleLowerCase("vi");
+    return (postsSeo?.posts ?? [])
+      .filter((post) => {
+        const matchesKeyword = !keyword || `${post.title} ${post.slug}`.toLocaleLowerCase("vi").includes(keyword);
+        const matchesStatus = postStatus === "all"
+          || (postStatus === "attention" ? post.seoScore !== null && post.seoScore < 70 : post.status === postStatus);
+        return matchesKeyword && matchesStatus;
+      })
+      .sort((left, right) => new Date(right.date ?? 0).getTime() - new Date(left.date ?? 0).getTime());
+  }, [postSearch, postStatus, postsSeo]);
+
+  const postPageCount = Math.max(1, Math.ceil(filteredSeoPosts.length / POSTS_PER_PAGE));
+  const pagedSeoPosts = useMemo(
+    () => filteredSeoPosts.slice((postPage - 1) * POSTS_PER_PAGE, postPage * POSTS_PER_PAGE),
+    [filteredSeoPosts, postPage],
+  );
+
+  useEffect(() => { setPostPage(1); }, [postSearch, postStatus, postsSeo]);
+
+  const securityPageCount = Math.max(1, Math.ceil((securityScan?.plugins.length ?? 0) / PLUGINS_PER_PAGE));
+  const pagedSecurityPlugins = useMemo(
+    () => (securityScan?.plugins ?? []).slice((securityPage - 1) * PLUGINS_PER_PAGE, securityPage * PLUGINS_PER_PAGE),
+    [securityPage, securityScan],
+  );
+
+  useEffect(() => { setSecurityPage(1); }, [securityScan]);
+
   async function scanNow() {
     setQueuing(true); setError("");
     try {
@@ -204,6 +309,7 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
       if (!response.ok) throw new Error(result.message ?? "Không thể kết nối WordPress.");
       setWordpressModal(false);
       window.localStorage.removeItem(wordpressCacheKey(websiteId));
+      window.localStorage.removeItem(postsSeoCacheKey(websiteId));
       await loadWordPress(true);
     } catch (reason) {
       setWordpressError(reason instanceof Error ? reason.message : "Không thể kết nối WordPress.");
@@ -218,6 +324,8 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
     const result = await response.json();
     if (!response.ok) { setWordpressError(result.message ?? "Không thể ngắt kết nối."); return; }
     window.localStorage.removeItem(wordpressCacheKey(websiteId));
+    window.localStorage.removeItem(postsSeoCacheKey(websiteId));
+    setPostsSeo(null);
     setWordpress({ connected: false, plugins: [], themes: [] });
   }
 
@@ -287,9 +395,29 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
           {!wordpressLoading && !wordpress?.connected && <div className="wordpress-empty"><span className="wordpress-logo">W</span><strong>Website chưa kết nối WordPress</strong><p>Tạo Application Password trong tài khoản quản trị WordPress, sau đó kết nối tại đây.</p><button className="primary" type="button" onClick={() => { setWordpressError(""); setWordpressModal(true); }}><KeyRound size={16} />Kết nối WordPress</button></div>}
           {wordpress?.connected && <div className="wordpress-content"><div className="wordpress-summary"><span className="wordpress-logo small">W</span><div><strong>Đã kết nối</strong><small>Tài khoản {wordpress.profile?.name ?? wordpress.username} · {wordpress.themes.length} theme</small></div><span className="status healthy">Hoạt động</span></div><div className="wordpress-columns single-column"><section><header><div><Palette size={18} /><strong>Theme</strong></div><span>{wordpress.themes.length} theme</span></header><div className="wordpress-list">{wordpress.themes.map((themeItem) => <article key={themeItem.stylesheet}><div><strong>{rendered(themeItem.name)}</strong><small>Phiên bản {themeItem.version}</small></div><span className={`theme-status ${themeItem.status}`}>{themeItem.status === "active" ? "Đang dùng" : "Chưa dùng"}</span></article>)}{wordpress.themes.length === 0 && <p className="muted">Không tìm thấy theme.</p>}</div></section></div></div>}
         </section>
-        {wordpress?.connected && <section className="panel security-panel"><div className="panel-head"><div><h2>Kiểm tra plugin bản quyền & mã nguồn</h2><p>So sánh checksum và tìm dấu hiệu mã cần kiểm tra</p></div><div className="wordpress-actions"><a className="secondary" href="/downloads/siteops-security-agent-v14.zip" download="siteops-security-agent-v14.zip">Cài Agent 1.4</a><button className="primary" type="button" disabled={securityScanning} onClick={() => void scanPluginSecurity()}><ShieldCheck size={16} className={securityScanning ? "spin" : ""} />{securityScanning ? "Đang quét..." : "Quét bảo mật plugin"}</button></div></div>
+        {wordpress?.connected && <section className="panel seo-posts-panel">
+          <div className="panel-head"><div><h2>Bài viết & SEO</h2><p>Kiểm tra SEO on-page từ dữ liệu WordPress thật</p></div><button className="secondary" type="button" disabled={postsSeoLoading} onClick={() => void loadPostsSeo(true)}><RefreshCw size={15} className={postsSeoLoading ? "spin" : ""} />{postsSeoLoading ? "Đang phân tích" : "Làm mới SEO"}</button></div>
+          {postsSeoError && <div className="wordpress-error"><XCircle size={17} /><span>{postsSeoError}</span></div>}
+          {postsSeoLoading && !postsSeo && <div className="seo-loading"><RefreshCw className="spin" size={24} /><strong>Đang tải và phân tích bài viết...</strong><span>Thời gian phụ thuộc số lượng bài trên WordPress.</span></div>}
+          {postsSeo && <>
+            {!postsSeo.summary.rankMathDataAvailable && <div className="seo-info"><AlertTriangle size={17} /><span>Chưa đọc được điểm Rank Math. Hãy cài hoặc cập nhật SiteOps Agent 1.6 trên WordPress rồi bấm “Làm mới SEO”.</span></div>}
+            <div className="seo-summary">
+              <article><span>Tổng bài viết</span><strong>{postsSeo.summary.total}</strong><small>{postsSeo.summary.published} đã đăng · {postsSeo.summary.draft} bản nháp</small></article>
+              <article className="average"><span>Điểm Rank Math trung bình</span><strong>{postsSeo.summary.averageScore ?? "—"}</strong><small>{postsSeo.summary.rankMathScored}/{postsSeo.summary.total} bài đã được Rank Math chấm</small></article>
+              <article className="attention"><span>Cần tối ưu</span><strong>{postsSeo.summary.needsAttention}</strong><small>Bài có điểm dưới 70</small></article>
+              <article><span>Nội dung ngắn</span><strong>{postsSeo.summary.shortContent}</strong><small>{postsSeo.summary.missingFeaturedImage} bài thiếu ảnh đại diện</small></article>
+            </div>
+            <div className="seo-toolbar"><label><Search size={16} /><input value={postSearch} onChange={(event) => setPostSearch(event.target.value)} placeholder="Tìm tiêu đề hoặc đường dẫn..." /></label><select value={postStatus} onChange={(event) => setPostStatus(event.target.value)} aria-label="Lọc bài viết"><option value="all">Tất cả bài viết</option><option value="publish">Đã đăng</option><option value="draft">Bản nháp</option><option value="attention">Cần tối ưu</option></select><span>{filteredSeoPosts.length} kết quả</span></div>
+            <div className="table-wrap seo-posts-table"><table><thead><tr><th>Bài viết</th><th>Trạng thái</th><th>Ngày đăng</th><th>Điểm Rank Math</th><th>Nội dung</th><th>Thao tác</th></tr></thead><tbody>
+              {pagedSeoPosts.map((post) => <tr key={post.id}><td><div className="post-title"><FileText size={17} /><div><strong>{post.title}</strong><small>/{post.slug}</small></div></div></td><td><span className={`post-status ${post.status}`}>{postStatusLabels[post.status] ?? post.status}</span></td><td className="post-dates"><strong>{formatDate(post.date ?? null)}</strong><small>Cập nhật {formatDate(post.modified ?? null)}</small></td><td><span className={`seo-score ${post.seoStatus}`} title={post.seoScore === null ? "Bài viết chưa có điểm Rank Math" : "Điểm Rank Math"}>{post.seoScore ?? "—"}</span></td><td><strong>{post.wordCount} từ</strong><small>{post.imageCount} ảnh · {post.internalLinks} link nội bộ</small></td><td><div className="post-actions"><a href={post.editUrl} target="_blank" rel="noreferrer">Sửa SEO</a>{post.link && <a href={post.link} target="_blank" rel="noreferrer" aria-label={`Mở ${post.title}`}><ExternalLink size={14} /></a>}</div></td></tr>)}
+              {filteredSeoPosts.length === 0 && <tr><td colSpan={6}><div className="empty-state"><FileText size={23} /><strong>Không có bài viết phù hợp</strong><span>Thử thay đổi từ khóa hoặc bộ lọc.</span></div></td></tr>}
+            </tbody></table></div>
+            {filteredSeoPosts.length > 0 && <div className="seo-pagination"><span>Hiển thị {(postPage - 1) * POSTS_PER_PAGE + 1}–{Math.min(postPage * POSTS_PER_PAGE, filteredSeoPosts.length)} trong {filteredSeoPosts.length} bài</span><div><button type="button" disabled={postPage === 1} onClick={() => setPostPage((page) => Math.max(1, page - 1))} aria-label="Trang trước"><ChevronLeft size={15} /></button><strong>Trang {postPage} / {postPageCount}</strong><button type="button" disabled={postPage === postPageCount} onClick={() => setPostPage((page) => Math.min(postPageCount, page + 1))} aria-label="Trang sau"><ChevronRight size={15} /></button></div></div>}
+          </>}
+        </section>}
+        {wordpress?.connected && <section className="panel security-panel"><div className="panel-head"><div><h2>Kiểm tra plugin bản quyền & mã nguồn</h2><p>So sánh checksum và tìm dấu hiệu mã cần kiểm tra</p></div><div className="wordpress-actions"><a className="secondary" href="/downloads/siteops-agent-rankmath-v16.zip" download="siteops-agent-rankmath-v16.zip">Cài Agent 1.6</a><button className="primary" type="button" disabled={securityScanning} onClick={() => void scanPluginSecurity()}><ShieldCheck size={16} className={securityScanning ? "spin" : ""} />{securityScanning ? "Đang quét..." : "Quét bảo mật plugin"}</button></div></div>
           {!securityScan && <div className="security-intro"><ShieldCheck size={28} /><strong>Chưa có kết quả kiểm tra</strong><p>Tải và kích hoạt SiteOps Agent trên WordPress, sau đó bấm “Quét bảo mật plugin”. Kết quả chỉ là đánh giá kỹ thuật, không thay thế xác nhận license từ nhà cung cấp.</p></div>}
-          {securityScan && <><div className="security-summary"><article><span>Tổng plugin</span><strong>{securityScan.summary.total}</strong></article><article className="safe"><span>Checksum hợp lệ</span><strong>{securityScan.summary.verified}</strong></article><article className="warn"><span>Cần kiểm tra</span><strong>{securityScan.summary.warning}</strong></article><article className="danger"><span>File thay đổi</span><strong>{securityScan.summary.modified}</strong></article><article><span>Chưa xác định</span><strong>{securityScan.summary.unknown}</strong></article></div><div className="table-wrap security-table"><table><thead><tr><th>Plugin</th><th>Nguồn / bản quyền</th><th>Tính toàn vẹn</th><th>Mức rủi ro</th><th>Phát hiện</th></tr></thead><tbody>{securityScan.plugins.map((plugin) => <tr key={plugin.plugin}><td><strong>{plugin.name}</strong><small>Phiên bản {plugin.version} · {plugin.active ? "Đang bật" : "Đang tắt"}</small></td><td><span className="security-source">{plugin.source === "wordpress.org" ? "WordPress.org" : "Trả phí / tùy chỉnh"}</span><small>{plugin.licenseStatus === "not-required" ? "Không cần license trả phí" : "Cần xác minh với nhà cung cấp"}</small></td><td><span className={`security-badge ${plugin.integrity}`}>{integrityLabels[plugin.integrity]}</span></td><td><span className={`security-badge risk-${plugin.risk}`}>{riskLabels[plugin.risk]}</span></td><td><span className="finding-text">{plugin.findings[0] ?? "Không có dấu hiệu bất thường"}</span>{plugin.changedFiles.length > 0 && <small title={plugin.changedFiles.join("\n")}>{plugin.changedFiles.length} file cần xem</small>}</td></tr>)}</tbody></table></div><footer className="security-footer"><span>Agent {securityScan.agentVersion ?? "—"} · WordPress {securityScan.wordpressVersion ?? "—"} · PHP {securityScan.phpVersion ?? "—"}</span><span>Lần quét: {formatDate(securityScan.checkedAt ?? securityScan.scannedAt ?? null)}</span></footer></>}
+          {securityScan && <><div className="security-summary"><article><span>Tổng plugin</span><strong>{securityScan.summary.total}</strong></article><article className="safe"><span>Checksum hợp lệ</span><strong>{securityScan.summary.verified}</strong></article><article className="warn"><span>Cần kiểm tra</span><strong>{securityScan.summary.warning}</strong></article><article className="danger"><span>File thay đổi</span><strong>{securityScan.summary.modified}</strong></article><article><span>Chưa xác định</span><strong>{securityScan.summary.unknown}</strong></article></div><div className="table-wrap security-table"><table><thead><tr><th>Plugin</th><th>Nguồn / bản quyền</th><th>Tính toàn vẹn</th><th>Mức rủi ro</th><th>Phát hiện</th></tr></thead><tbody>{pagedSecurityPlugins.map((plugin) => <tr key={plugin.plugin}><td><strong>{plugin.name}</strong><small>Phiên bản {plugin.version} · {plugin.active ? "Đang bật" : "Đang tắt"}</small></td><td><span className="security-source">{plugin.source === "wordpress.org" ? "WordPress.org" : "Trả phí / tùy chỉnh"}</span><small>{plugin.licenseStatus === "not-required" ? "Không cần license trả phí" : "Cần xác minh với nhà cung cấp"}</small></td><td><span className={`security-badge ${plugin.integrity}`}>{integrityLabels[plugin.integrity]}</span></td><td><span className={`security-badge risk-${plugin.risk}`}>{riskLabels[plugin.risk]}</span></td><td><span className="finding-text">{plugin.findings[0] ?? "Không có dấu hiệu bất thường"}</span>{plugin.changedFiles.length > 0 && <small title={plugin.changedFiles.join("\n")}>{plugin.changedFiles.length} file cần xem</small>}</td></tr>)}</tbody></table></div><div className="seo-pagination"><span>Hiển thị {(securityPage - 1) * PLUGINS_PER_PAGE + 1}–{Math.min(securityPage * PLUGINS_PER_PAGE, securityScan.plugins.length)} trong {securityScan.plugins.length} plugin</span><div><button type="button" disabled={securityPage === 1} onClick={() => setSecurityPage((page) => Math.max(1, page - 1))} aria-label="Trang plugin trước"><ChevronLeft size={15} /></button><strong>Trang {securityPage} / {securityPageCount}</strong><button type="button" disabled={securityPage === securityPageCount} onClick={() => setSecurityPage((page) => Math.min(securityPageCount, page + 1))} aria-label="Trang plugin sau"><ChevronRight size={15} /></button></div></div><footer className="security-footer"><span>Agent {securityScan.agentVersion ?? "—"} · WordPress {securityScan.wordpressVersion ?? "—"} · PHP {securityScan.phpVersion ?? "—"}</span><span>Lần quét: {formatDate(securityScan.checkedAt ?? securityScan.scannedAt ?? null)}</span></footer></>}
         </section>}
         <section className="panel history-panel"><div className="panel-head"><div><h2>Lịch sử kiểm tra</h2><p>{checks.length} bản ghi gần nhất</p></div><CheckCircle2 size={18} /></div><div className="table-wrap"><table><thead><tr><th>Thời gian</th><th>Loại kiểm tra</th><th>Kết quả</th><th>Điểm / Phản hồi</th></tr></thead><tbody>{checks.map((check) => <tr key={check.id}><td>{formatDate(check.checkedAt)}</td><td>{check.checkType}</td><td><span className={`check-result ${check.status}`}>{check.status === "ok" ? "Thành công" : "Có lỗi"}</span></td><td>{check.performanceScore !== null ? `${check.performanceScore}/100` : check.responseTimeMs ? `${check.responseTimeMs} ms` : check.details?.error ?? "—"}</td></tr>)}{checks.length === 0 && <tr><td colSpan={4}><div className="empty-state"><Activity size={24} /><strong>Chưa có lịch sử quét</strong><span>Bấm “Quét lại” để bắt đầu.</span></div></td></tr>}</tbody></table></div></section>
       </main>

@@ -21,6 +21,7 @@ from .wordpress import (
     decrypt_password,
     encrypt_password,
     get_inventory,
+    get_posts_seo,
     run_plugin_security_scan,
     update_plugin_status,
     verify_connection,
@@ -398,6 +399,33 @@ def wordpress_inventory(website_id: int):
             "connectedAt": website["connectedAt"],
             **inventory,
         }
+    except WordPressError as error:
+        return message(str(error), error.status_code)
+
+
+@app.get("/api/websites/{website_id}/wordpress/posts-seo")
+def wordpress_posts_seo(website_id: int):
+    with connection() as conn:
+        website = conn.execute(
+            """
+            SELECT url, wp_username AS "username",
+              wp_application_password AS "encryptedPassword"
+            FROM websites WHERE id = %s
+            """,
+            (website_id,),
+        ).fetchone()
+
+    if not website:
+        return message("Không tìm thấy website.", 404)
+    if not website["username"] or not website["encryptedPassword"]:
+        return message("Website chưa kết nối WordPress.", 409)
+
+    try:
+        return get_posts_seo(
+            website["url"],
+            website["username"],
+            decrypt_password(website["encryptedPassword"]),
+        )
     except WordPressError as error:
         return message(str(error), error.status_code)
 
