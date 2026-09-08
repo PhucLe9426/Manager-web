@@ -86,4 +86,31 @@ def get_detail(website_id: int) -> dict | None:
             """,
             (website_id,),
         ).fetchone()
-    return {"website": website, "checks": checks, "job": job}
+        activities = conn.execute(
+            """
+            SELECT * FROM (
+              SELECT 'monitoring-' || id::text AS "activityId", check_type AS "checkType",
+                status, response_time_ms AS "responseTimeMs",
+                performance_score AS "performanceScore", details,
+                checked_at AS "checkedAt"
+              FROM monitoring_checks WHERE website_id = %s
+              UNION ALL
+              SELECT 'plugin-' || id::text, 'plugin-security', 'ok',
+                NULL::integer, NULL::smallint, summary, checked_at
+              FROM wordpress_security_scans WHERE website_id = %s
+              UNION ALL
+              SELECT 'malware-' || id::text, 'malware-' || scan_type,
+                CASE WHEN status = 'completed' THEN 'ok' WHEN status = 'failed' THEN 'error' ELSE status END,
+                NULL::integer, NULL::smallint,
+                jsonb_build_object(
+                  'totalFiles', total_files, 'scannedFiles', scanned_files,
+                  'danger', danger_count, 'warning', warning_count,
+                  'info', info_count, 'error', last_error
+                ), COALESCE(completed_at, updated_at)
+              FROM malware_scans WHERE website_id = %s
+            ) activity
+            ORDER BY "checkedAt" DESC LIMIT 100
+            """,
+            (website_id, website_id, website_id),
+        ).fetchall()
+    return {"website": website, "checks": checks, "activities": activities, "job": job}

@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Activity, AlertTriangle, Bell, CheckCircle2, ChevronRight, CircleUserRound,
+  Activity, AlertTriangle, CheckCircle2, ChevronRight, CircleUserRound,
   Clock3, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks, Menu,
   Moon, Pencil, Plus, RefreshCw, Search, Server, ShieldCheck, Sun, UsersRound, X,
 } from "lucide-react";
@@ -9,6 +9,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/hooks/use-theme";
+import { NotificationBell } from "@/components/notification-bell";
 
 type Website = {
   id: number;
@@ -254,7 +255,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
       <div className="content">
         <header className="topbar">
           <button className="icon-button mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở trình đơn"><Menu size={20} /></button>
-          <div className="user-area"><button type="button" className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"} title={theme === "dark" ? "Chế độ sáng" : "Chế độ tối"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button notification" aria-label="Thông báo"><Bell size={18} /><i /></button><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div>
+          <div className="user-area"><button type="button" className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"} title={theme === "dark" ? "Chế độ sáng" : "Chế độ tối"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button><NotificationBell /><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div>
         </header>
 
         <main>

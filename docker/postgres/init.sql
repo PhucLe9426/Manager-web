@@ -167,3 +167,20 @@ CREATE TABLE IF NOT EXISTS file_baselines (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (website_id, file_path)
 );
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGSERIAL PRIMARY KEY,
+  website_id BIGINT REFERENCES websites(id) ON DELETE CASCADE,
+  event_key VARCHAR(190) NOT NULL UNIQUE,
+  category VARCHAR(40) NOT NULL,
+  severity VARCHAR(20) NOT NULL DEFAULT 'info',
+  title VARCHAR(240) NOT NULL,
+  message TEXT NOT NULL,
+  link TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_unread_time
+ON notifications(is_read, created_at DESC);

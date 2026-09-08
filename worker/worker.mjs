@@ -158,6 +158,7 @@ async function runMalwareJob(job) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await sql`UPDATE malware_scans SET status = 'failed', completed_at = NOW(), last_error = ${message.slice(0, 2000)}, updated_at = NOW() WHERE id = ${job.id}`;
+    await sql`INSERT INTO notifications (website_id, event_key, category, severity, title, message, link) VALUES (${job.websiteId}, ${`malware:${job.id}:failed`}, 'malware', 'danger', 'Quét malware thất bại', ${message.slice(0, 500)}, ${`/websites/${job.websiteId}`}) ON CONFLICT (event_key) DO NOTHING`;
     console.error(`[malware] website=${job.websiteId}, scan=${job.id}: ${message}`);
   }
 }
@@ -188,6 +189,9 @@ async function scan(job) {
       const [{ uptime }] = await transaction`SELECT COALESCE(100.0 * COUNT(*) FILTER (WHERE status = 'ok') / NULLIF(COUNT(*), 0), 0)::float AS uptime FROM monitoring_checks WHERE website_id = ${website.id} AND check_type = 'availability' AND checked_at >= NOW() - INTERVAL '30 days'`;
       await transaction`UPDATE websites SET status = ${status}, performance_score = ${score}, uptime_percent = ${uptime}, ssl_expires_at = ${sslExpiresAt}, last_checked_at = NOW(), updated_at = NOW() WHERE id = ${website.id}`;
       await transaction`UPDATE scan_jobs SET status = 'completed', completed_at = NOW(), last_error = NULL, updated_at = NOW() WHERE id = ${job.id}`;
+      const eventKey = `monitoring:${job.id}:completed:${Date.now()}`;
+      const scanMessage = `Uptime ${Number(uptime).toFixed(2)}%, Mobile ${mobile?.score ?? "—"}, Desktop ${desktop?.score ?? "—"}.`;
+      await transaction`INSERT INTO notifications (website_id, event_key, category, severity, title, message, link) VALUES (${website.id}, ${eventKey}, 'monitoring', ${status === "healthy" ? "success" : status === "watching" ? "warning" : "danger"}, 'Kiểm tra website đã hoàn tất', ${scanMessage}, ${`/websites/${website.id}`}) ON CONFLICT (event_key) DO NOTHING`;
     });
     console.log(`[scan] ${website.domain}: ${status}, score=${score ?? "n/a"}`);
   } catch (error) {
@@ -196,6 +200,8 @@ async function scan(job) {
       await transaction`INSERT INTO monitoring_checks (website_id, check_type, status, details) VALUES (${website.id}, 'availability', 'error', ${sql.json({ error: message })})`;
       await transaction`UPDATE websites SET status = 'attention', last_checked_at = NOW(), updated_at = NOW() WHERE id = ${website.id}`;
       await transaction`UPDATE scan_jobs SET status = 'failed', completed_at = NOW(), last_error = ${message.slice(0, 1000)}, updated_at = NOW() WHERE id = ${job.id}`;
+      const eventKey = `monitoring:${job.id}:failed:${Date.now()}`;
+      await transaction`INSERT INTO notifications (website_id, event_key, category, severity, title, message, link) VALUES (${website.id}, ${eventKey}, 'monitoring', 'danger', 'Kiểm tra website thất bại', ${message.slice(0, 500)}, ${`/websites/${website.id}`}) ON CONFLICT (event_key) DO NOTHING`;
     });
     console.error(`[scan] ${website.domain}: ${message}`);
   }

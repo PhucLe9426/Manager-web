@@ -2,18 +2,25 @@
 
 import Link from "next/link";
 import {
-  Activity, AlertTriangle, ArrowLeft, Bell, CheckCircle2, ChevronLeft, ChevronRight, CircleUserRound, Clock3,
+  Activity, AlertTriangle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, CircleUserRound, Clock3,
   ExternalLink, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks,
   FileText, KeyRound, Menu, Moon, Palette, Plug, RefreshCw, Search, ShieldAlert, ShieldCheck, Sun,
   UsersRound, X, XCircle,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "@/hooks/use-theme";
+import { NotificationBell } from "@/components/notification-bell";
 
 type Check = {
   id: number; checkType: string; status: string; responseTimeMs: number | null;
   performanceScore: number | null; lcpSeconds: number | null; clsScore: number | null;
   details: { fcpSeconds?: number; statusCode?: number; finalUrl?: string; error?: string } | null;
+  checkedAt: string;
+};
+type ActivityHistory = {
+  activityId: string; checkType: string; status: string;
+  responseTimeMs: number | null; performanceScore: number | null;
+  details: { error?: string; total?: number; modified?: number; warning?: number; unknown?: number; totalFiles?: number; scannedFiles?: number; danger?: number; info?: number } | null;
   checkedAt: string;
 };
 type Detail = {
@@ -23,6 +30,7 @@ type Detail = {
     lastCheckedAt: string | null; customerName: string; contactName: string | null; contactEmail: string | null;
   };
   checks: Check[];
+  activities: ActivityHistory[];
   job: { status: string; attempts: number; startedAt: string | null; completedAt: string | null; lastError: string | null } | null;
 };
 type WordPressPlugin = {
@@ -97,6 +105,11 @@ const postStatusLabels: Record<string, string> = { publish: "Đã đăng", draft
 const malwareScanStatusLabels: Record<string, string> = { queued: "Đang chờ", running: "Đang quét", completed: "Đã hoàn tất", failed: "Quét thất bại" };
 const malwareSeverityLabels: Record<string, string> = { info: "Thông tin", warning: "Cảnh báo", danger: "Nguy hiểm" };
 const malwareFindingStatusLabels: Record<string, string> = { open: "Chưa xử lý", acknowledged: "Đã xem", false_positive: "Báo nhầm", resolved: "Đã xử lý" };
+const checkTypeLabels: Record<string, string> = {
+  availability: "Kiểm tra hoạt động", "pagespeed-mobile": "PageSpeed Mobile",
+  "pagespeed-desktop": "PageSpeed Desktop", "plugin-security": "Bảo mật plugin",
+  "malware-quick": "Malware · Quét nhanh", "malware-full": "Malware · Quét toàn bộ",
+};
 const WORDPRESS_CACHE_TTL_MS = 10 * 60 * 1000;
 const POSTS_SEO_CACHE_TTL_MS = 5 * 60 * 1000;
 const POSTS_PER_PAGE = 20;
@@ -117,6 +130,17 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 }
 function rendered(value: { rendered?: string } | string | undefined) {
   return typeof value === "string" ? value : value?.rendered ?? "Không rõ";
+}
+function activityValue(activity: ActivityHistory) {
+  if (activity.performanceScore !== null) return `${activity.performanceScore}/100`;
+  if (activity.responseTimeMs !== null) return `${activity.responseTimeMs} ms`;
+  if (activity.checkType === "plugin-security") {
+    return `${activity.details?.total ?? 0} plugin · ${(activity.details?.modified ?? 0) + (activity.details?.warning ?? 0)} cần kiểm tra`;
+  }
+  if (activity.checkType.startsWith("malware-")) {
+    return `${activity.details?.scannedFiles ?? 0}/${activity.details?.totalFiles ?? 0} file · ${(activity.details?.danger ?? 0) + (activity.details?.warning ?? 0)} cảnh báo`;
+  }
+  return activity.details?.error ?? "—";
 }
 
 export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
@@ -505,7 +529,7 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
 
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? "open" : ""} ${sidebarCollapsed ? "collapsed" : ""}`}><div className="brand"><span className="brand-mark"><Activity size={21} /></span><span className="brand-copy"><strong>SiteOps</strong><small>Web Care Center</small></span><button type="button" className="sidebar-toggle" onClick={toggleSidebar} aria-label={sidebarCollapsed ? "Mở rộng thanh điều hướng" : "Thu gọn thanh điều hướng"} title={sidebarCollapsed ? "Mở rộng" : "Thu gọn"}><Menu size={21} /></button></div><nav><p>Vận hành</p>{navigation.map(([label, Icon, href]) => <Link className={label === "Website" ? "active" : ""} href={href} key={label} onClick={() => setMenuOpen(false)} title={sidebarCollapsed ? label : undefined}><Icon size={17} /><span className="nav-label">{label}</span></Link>)}</nav><div className="sidebar-note"><ShieldCheck size={17} /><strong>Hệ thống an toàn</strong><span>Docker và PostgreSQL đang hoạt động</span></div></aside>
-    <div className="content"><header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở trình đơn"><Menu size={20} /></button><Link className="back-link" href="/websites"><ArrowLeft size={17} />Danh sách website</Link><div className="user-area"><button type="button" className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"} title={theme === "dark" ? "Chế độ sáng" : "Chế độ tối"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button notification" aria-label="Thông báo"><Bell size={18} /><i /></button><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div></header>
+    <div className="content"><header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Mở trình đơn"><Menu size={20} /></button><Link className="back-link" href="/websites"><ArrowLeft size={17} />Danh sách website</Link><div className="user-area"><button type="button" className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"} title={theme === "dark" ? "Chế độ sáng" : "Chế độ tối"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button><NotificationBell /><span className="avatar"><CircleUserRound size={21} /></span><span><strong>Quản trị viên</strong><small>Administrator</small></span></div></header>
       <main className="detail-main">
         <section className="detail-heading"><div><div className="detail-domain"><Globe2 size={22} /><span><h1>{website.domain}</h1><p>{website.customerName} · {website.platform}</p></span></div><span className={`status ${website.status}`}>{labels[website.status] ?? website.status}</span></div><div className="detail-actions"><a className="secondary" href={website.url} target="_blank" rel="noreferrer">Mở website <ExternalLink size={15} /></a><button className="primary" disabled={pageSpeedPending || queuing} onClick={() => void scanNow()}><RefreshCw size={16} className={pageSpeedPending ? "spin" : ""} />{pageSpeedPending ? "Đang quét" : "Quét lại"}</button></div></section>
         {error && <div className="notice error">{error}</div>}
@@ -561,7 +585,7 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
           {!securityScan && <div className="security-intro"><ShieldCheck size={28} /><strong>Chưa có kết quả kiểm tra</strong><p>Tải và kích hoạt SiteOps Agent trên WordPress, sau đó bấm “Quét bảo mật plugin”. Kết quả chỉ là đánh giá kỹ thuật, không thay thế xác nhận license từ nhà cung cấp.</p></div>}
           {securityScan && <><div className="security-summary"><article><span>Tổng plugin</span><strong>{securityScan.summary.total}</strong></article><article className="safe"><span>Checksum hợp lệ</span><strong>{securityScan.summary.verified}</strong></article><article className="warn"><span>Cần kiểm tra</span><strong>{securityScan.summary.warning}</strong></article><article className="danger"><span>File thay đổi</span><strong>{securityScan.summary.modified}</strong></article><article><span>Chưa xác định</span><strong>{securityScan.summary.unknown}</strong></article></div><div className="table-wrap security-table"><table><thead><tr><th>Plugin</th><th>Nguồn / bản quyền</th><th>Tính toàn vẹn</th><th>Mức rủi ro</th><th>Phát hiện</th></tr></thead><tbody>{pagedSecurityPlugins.map((plugin) => <tr key={plugin.plugin}><td><strong>{plugin.name}</strong><small>Phiên bản {plugin.version} · {plugin.active ? "Đang bật" : "Đang tắt"}</small></td><td><span className="security-source">{plugin.source === "wordpress.org" ? "WordPress.org" : "Trả phí / tùy chỉnh"}</span><small>{plugin.licenseStatus === "not-required" ? "Không cần license trả phí" : "Cần xác minh với nhà cung cấp"}</small></td><td><span className={`security-badge ${plugin.integrity}`}>{integrityLabels[plugin.integrity]}</span></td><td><span className={`security-badge risk-${plugin.risk}`}>{riskLabels[plugin.risk]}</span></td><td><span className="finding-text">{plugin.findings[0] ?? "Không có dấu hiệu bất thường"}</span>{plugin.changedFiles.length > 0 && <small title={plugin.changedFiles.join("\n")}>{plugin.changedFiles.length} file cần xem</small>}</td></tr>)}</tbody></table></div><div className="seo-pagination"><span>Hiển thị {(securityPage - 1) * PLUGINS_PER_PAGE + 1}–{Math.min(securityPage * PLUGINS_PER_PAGE, securityScan.plugins.length)} trong {securityScan.plugins.length} plugin</span><div><button type="button" disabled={securityPage === 1} onClick={() => setSecurityPage((page) => Math.max(1, page - 1))} aria-label="Trang plugin trước"><ChevronLeft size={15} /></button><strong>Trang {securityPage} / {securityPageCount}</strong><button type="button" disabled={securityPage === securityPageCount} onClick={() => setSecurityPage((page) => Math.min(securityPageCount, page + 1))} aria-label="Trang plugin sau"><ChevronRight size={15} /></button></div></div><footer className="security-footer"><span>Agent {securityScan.agentVersion ?? "—"} · WordPress {securityScan.wordpressVersion ?? "—"} · PHP {securityScan.phpVersion ?? "—"}</span><span>Lần quét: {formatDate(securityScan.checkedAt ?? securityScan.scannedAt ?? null)}</span></footer></>}
         </section>}
-        <section className="panel history-panel"><div className="panel-head"><div><h2>Lịch sử kiểm tra</h2><p>{checks.length} bản ghi gần nhất</p></div><CheckCircle2 size={18} /></div><div className="table-wrap"><table><thead><tr><th>Thời gian</th><th>Loại kiểm tra</th><th>Kết quả</th><th>Điểm / Phản hồi</th></tr></thead><tbody>{checks.map((check) => <tr key={check.id}><td>{formatDate(check.checkedAt)}</td><td>{check.checkType}</td><td><span className={`check-result ${check.status}`}>{check.status === "ok" ? "Thành công" : "Có lỗi"}</span></td><td>{check.performanceScore !== null ? `${check.performanceScore}/100` : check.responseTimeMs ? `${check.responseTimeMs} ms` : check.details?.error ?? "—"}</td></tr>)}{checks.length === 0 && <tr><td colSpan={4}><div className="empty-state"><Activity size={24} /><strong>Chưa có lịch sử quét</strong><span>Bấm “Quét lại” để bắt đầu.</span></div></td></tr>}</tbody></table></div></section>
+        <section className="panel history-panel"><div className="panel-head"><div><h2>Lịch sử kiểm tra</h2><p>{data.activities?.length ?? 0} bản ghi gần nhất · gồm PageSpeed, plugin và malware</p></div><CheckCircle2 size={18} /></div><div className="table-wrap"><table><thead><tr><th>Thời gian</th><th>Loại kiểm tra</th><th>Kết quả</th><th>Điểm / Phản hồi</th></tr></thead><tbody>{(data.activities ?? []).map((activity) => <tr key={activity.activityId}><td>{formatDate(activity.checkedAt)}</td><td>{checkTypeLabels[activity.checkType] ?? activity.checkType}</td><td><span className={`check-result ${activity.status}`}>{activity.status === "ok" ? "Thành công" : activity.status === "running" ? "Đang chạy" : activity.status === "queued" ? "Đang chờ" : "Có lỗi"}</span></td><td>{activityValue(activity)}</td></tr>)}{!data.activities?.length && <tr><td colSpan={4}><div className="empty-state"><Activity size={24} /><strong>Chưa có lịch sử quét</strong><span>Bấm “Quét lại” để bắt đầu.</span></div></td></tr>}</tbody></table></div></section>
       </main>
     </div>
     {wordpressModal && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setWordpressModal(false)}><form className="modal" onSubmit={connectWordPress}><div><h2>Kết nối WordPress</h2><button type="button" className="icon-button" onClick={() => setWordpressModal(false)} aria-label="Đóng"><X size={18} /></button></div>{wordpressError && <div className="form-error" role="alert"><XCircle size={16} /><span>{wordpressError}</span></div>}<label>Tên đăng nhập WordPress<input name="username" autoComplete="username" required placeholder="admin" /></label><label>Application Password<input name="applicationPassword" type="password" autoComplete="new-password" required placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" /></label><p>Trong WordPress: Người dùng → Hồ sơ → Mật khẩu ứng dụng. Kết nối chỉ hoạt động qua HTTPS và tài khoản cần quyền quản trị plugin.</p><footer><button type="button" className="secondary" onClick={() => setWordpressModal(false)}>Hủy</button><button className="primary" type="submit" disabled={wordpressSaving}>{wordpressSaving ? "Đang kiểm tra..." : "Kết nối"}</button></footer></form></div>}

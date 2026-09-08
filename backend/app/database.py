@@ -180,3 +180,40 @@ def ensure_scan_queue_schema() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+              id BIGSERIAL PRIMARY KEY,
+              website_id BIGINT REFERENCES websites(id) ON DELETE CASCADE,
+              event_key VARCHAR(190) NOT NULL UNIQUE,
+              category VARCHAR(40) NOT NULL,
+              severity VARCHAR(20) NOT NULL DEFAULT 'info',
+              title VARCHAR(240) NOT NULL,
+              message TEXT NOT NULL,
+              link TEXT,
+              is_read BOOLEAN NOT NULL DEFAULT FALSE,
+              read_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notifications_unread_time ON notifications(is_read, created_at DESC)"
+        )
+        conn.execute(
+            """
+            INSERT INTO notifications
+              (website_id, event_key, category, severity, title, message, link, created_at)
+            SELECT s.website_id, 'malware:' || s.id || ':' || s.status, 'malware',
+              CASE WHEN s.status = 'failed' OR s.danger_count > 0 THEN 'danger'
+                   WHEN s.warning_count > 0 THEN 'warning' ELSE 'success' END,
+              CASE WHEN s.status = 'completed' THEN 'Quét malware đã hoàn tất'
+                   ELSE 'Quét malware thất bại' END,
+              w.domain || ': ' || s.scanned_files || '/' || s.total_files || ' file, ' ||
+                (s.warning_count + s.danger_count) || ' cảnh báo.',
+              '/websites/' || s.website_id, COALESCE(s.completed_at, s.updated_at)
+            FROM malware_scans s JOIN websites w ON w.id = s.website_id
+            WHERE s.status IN ('completed', 'failed')
+            ON CONFLICT (event_key) DO NOTHING
+            """
+        )

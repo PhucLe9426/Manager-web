@@ -41,6 +41,7 @@ backend/app/
 ├── customers/      # router/service/repository/schemas khách hàng
 ├── websites/       # router/service/repository/schemas website
 ├── monitoring/     # router/service/repository/schemas hàng đợi quét
+├── notifications/  # thông báo hoàn tất/thất bại và trạng thái đã đọc
 ├── wordpress_api/  # router/service/repository/schemas/client WordPress
 ├── malware/        # Router, service, repository và schema malware
 ├── database.py     # Pool kết nối và migration PostgreSQL

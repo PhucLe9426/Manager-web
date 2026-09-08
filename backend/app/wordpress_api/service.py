@@ -1,4 +1,7 @@
+import time
+
 from ..core.errors import ServiceError
+from ..notifications import repository as notification_repository
 from .client import (
     WordPressError,
     decrypt_password,
@@ -94,8 +97,29 @@ def security_scan(website_id: int) -> dict:
         result = run_plugin_security_scan(website["url"], website["username"], _password(website))
     except WordPressError as error:
         text = "Chưa cài hoặc chưa kích hoạt SiteOps Agent trên website WordPress." if error.status_code == 404 else str(error)
+        notification_repository.create_notification(
+            f"plugin-security:{website_id}:failed:{time.time_ns()}",
+            "plugin-security",
+            "danger",
+            "Kiểm tra plugin thất bại",
+            text[:500],
+            website_id,
+            f"/websites/{website_id}",
+        )
         raise ServiceError(text, error.status_code) from error
     saved = repository.save_security_scan(website_id, result)
+    summary = result.get("summary", {})
+    modified = int(summary.get("modified") or 0)
+    warning = int(summary.get("warning") or 0)
+    notification_repository.create_notification(
+        f"plugin-security:{saved['id']}:completed",
+        "plugin-security",
+        "danger" if modified else "warning" if warning else "success",
+        "Kiểm tra plugin đã hoàn tất",
+        f"Đã kiểm tra {int(summary.get('total') or 0)} plugin: {modified} file thay đổi, {warning} cần kiểm tra.",
+        website_id,
+        f"/websites/{website_id}",
+    )
     return {**result, **saved}
 
 
