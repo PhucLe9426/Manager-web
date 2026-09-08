@@ -9,6 +9,8 @@ if (!databaseUrl) throw new Error("Worker thiếu DATABASE_URL");
 const sql = postgres(databaseUrl, { max: 4, connect_timeout: 10 });
 const scanIntervalMinutes = Math.max(5, Number(process.env.SCAN_INTERVAL_MINUTES ?? 360));
 const pageSpeedApiKey = process.env.PAGESPEED_API_KEY?.trim();
+const backendInternalUrl = (process.env.BACKEND_INTERNAL_URL ?? "http://backend:4000").replace(/\/$/, "");
+const internalWorkerToken = process.env.INTERNAL_WORKER_TOKEN ?? "siteops-worker-dev-token";
 let stopping = false;
 
 function isPrivateAddress(address) {
@@ -110,6 +112,56 @@ async function claimJob() {
   });
 }
 
+async function claimMalwareJob() {
+  return await sql.begin(async (transaction) => {
+    const [job] = await transaction`
+      UPDATE malware_scans SET status = 'running', started_at = COALESCE(started_at, NOW()), updated_at = NOW()
+      WHERE id = (
+        SELECT id FROM malware_scans WHERE status = 'queued'
+        ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+      )
+      RETURNING id, website_id AS "websiteId", scan_type AS "scanType"
+    `;
+    return job;
+  });
+}
+
+async function runMalwareJob(job) {
+  try {
+    let finished = false;
+    while (!finished) {
+      let response;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          response = await fetch(`${backendInternalUrl}/api/internal/malware-scans/${job.id}/run`, {
+            method: "POST",
+            headers: { "x-worker-token": internalWorkerToken },
+            signal: AbortSignal.timeout(150 * 1000),
+          });
+          break;
+        } catch (error) {
+          if (attempt === 3) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 3000 * attempt));
+        }
+      }
+      if (!response?.ok) {
+        const body = response ? await response.text() : "Không có phản hồi";
+        throw new Error(`Backend malware HTTP ${response?.status ?? "?"}: ${body.slice(0, 500)}`);
+      }
+      const result = await response.json();
+      const scan = result?.scan;
+      if (!scan) throw new Error("Backend malware trả về dữ liệu không hợp lệ");
+      finished = scan.status === "completed";
+      console.log(`[malware] website=${job.websiteId}, scan=${job.id}: ${scan.scannedFiles}/${scan.totalFiles || "?"}`);
+    }
+    console.log(`[malware] website=${job.websiteId}, scan=${job.id}: completed`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await sql`UPDATE malware_scans SET status = 'failed', completed_at = NOW(), last_error = ${message.slice(0, 2000)}, updated_at = NOW() WHERE id = ${job.id}`;
+    console.error(`[malware] website=${job.websiteId}, scan=${job.id}: ${message}`);
+  }
+}
+
 async function scan(job) {
   const [website] = await sql`SELECT id, url, domain FROM websites WHERE id = ${job.websiteId}`;
   if (!website) return;
@@ -154,6 +206,11 @@ async function main() {
   console.log(`[worker] sẵn sàng; chu kỳ quét ${scanIntervalMinutes} phút`);
   while (!stopping) {
     await scheduleDueScans();
+    const malwareJob = await claimMalwareJob();
+    if (malwareJob) {
+      await runMalwareJob(malwareJob);
+      continue;
+    }
     const job = await claimJob();
     if (job) await scan(job);
     else await new Promise((resolve) => setTimeout(resolve, 5000));

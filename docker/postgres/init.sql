@@ -106,3 +106,64 @@ CREATE TABLE IF NOT EXISTS wordpress_security_scans (
 
 CREATE INDEX IF NOT EXISTS idx_wp_security_scans_website_time
 ON wordpress_security_scans(website_id, checked_at DESC);
+
+CREATE TABLE IF NOT EXISTS malware_scans (
+  id BIGSERIAL PRIMARY KEY,
+  website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  scan_type VARCHAR(20) NOT NULL DEFAULT 'quick',
+  status VARCHAR(30) NOT NULL DEFAULT 'queued',
+  cursor_position INTEGER NOT NULL DEFAULT 0,
+  total_files INTEGER NOT NULL DEFAULT 0,
+  scanned_files INTEGER NOT NULL DEFAULT 0,
+  skipped_files INTEGER NOT NULL DEFAULT 0,
+  info_count INTEGER NOT NULL DEFAULT 0,
+  warning_count INTEGER NOT NULL DEFAULT 0,
+  danger_count INTEGER NOT NULL DEFAULT 0,
+  agent_version VARCHAR(30),
+  rules_version VARCHAR(30),
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_malware_scans_queue ON malware_scans(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_malware_scans_website_time ON malware_scans(website_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS malware_findings (
+  id BIGSERIAL PRIMARY KEY,
+  scan_id BIGINT NOT NULL REFERENCES malware_scans(id) ON DELETE CASCADE,
+  website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  file_path TEXT NOT NULL,
+  file_hash VARCHAR(64),
+  component VARCHAR(40) NOT NULL DEFAULT 'unknown',
+  rule_code VARCHAR(80) NOT NULL,
+  severity VARCHAR(20) NOT NULL,
+  title VARCHAR(240) NOT NULL,
+  message TEXT NOT NULL,
+  line_number INTEGER,
+  snippet TEXT,
+  status VARCHAR(30) NOT NULL DEFAULT 'open',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (scan_id, file_path, rule_code, line_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_malware_findings_scan_severity
+ON malware_findings(scan_id, severity, status);
+
+CREATE TABLE IF NOT EXISTS file_baselines (
+  id BIGSERIAL PRIMARY KEY,
+  website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  file_path TEXT NOT NULL,
+  file_hash VARCHAR(64) NOT NULL,
+  source VARCHAR(40) NOT NULL DEFAULT 'internal',
+  component VARCHAR(190),
+  component_version VARCHAR(80),
+  approved_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (website_id, file_path)
+);

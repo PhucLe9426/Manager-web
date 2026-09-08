@@ -4,7 +4,9 @@ Hệ thống quản lý website khách hàng đã được tách thành các d�
 
 - `frontend/`: giao diện Next.js, chạy ở cổng `3000`.
 - `backend/`: REST API FastAPI và kết nối PostgreSQL, chạy ở cổng `4000`.
+- `backend/app/malware/`: API, nghiệp vụ và truy vấn PostgreSQL riêng của Malware Scanner.
 - `worker/`: tiến trình nền kiểm tra uptime, SSL và PageSpeed mobile/desktop.
+- `wordpress-agent/`: mã nguồn các SiteOps Agent cài trên WordPress.
 - `docker/postgres/`: schema PostgreSQL.
 - `pgadmin`: giao diện quản trị PostgreSQL, mặc định chạy ở cổng `5051`.
 
@@ -41,6 +43,7 @@ Sao chép `.env.example` thành `.env`, sau đó điền:
 - `PGADMIN_PORT`: cổng pgAdmin trên máy, mặc định `5051`.
 - `PAGESPEED_API_KEY`: API key Google PageSpeed (có thể để trống khi thử nghiệm).
 - `SCAN_INTERVAL_MINUTES`: chu kỳ quét lại, mặc định 360 phút.
+- `INTERNAL_WORKER_TOKEN`: khóa riêng dùng giữa FastAPI và worker.
 
 Không commit file `.env` lên GitHub.
 
@@ -77,6 +80,18 @@ Worker thường nên chạy bằng Docker để giữ môi trường giống pr
 ```powershell
 docker compose up -d worker
 ```
+
+## Malware Scanner MVP
+
+1. Mở trang chi tiết một website đã kết nối WordPress.
+2. Trong khối **Malware Scanner**, tải `SiteOps Agent 1.7`.
+3. Vào WordPress → Plugin → Cài plugin → Tải plugin lên, chọn file ZIP và kích hoạt.
+4. Quay lại SiteOps và chạy **Quét nhanh**. Chỉ dùng **Quét toàn bộ** khi cần rà soát sâu.
+5. Theo dõi tiến độ, lọc phát hiện theo mức độ/trạng thái và đánh dấu **Đã xem** hoặc **Báo nhầm**.
+
+Scanner chỉ đọc file, tính SHA-256 và tìm các mẫu mã đáng ngờ. MVP không tự xóa,
+sửa hay cách ly file. Một phát hiện là tín hiệu kỹ thuật cần kiểm tra, không phải kết
+luận chắc chắn website đã nhiễm malware.
 
 ## Trước khi triển khai thật
 

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 from .database import close_pool, connection, ensure_scan_queue_schema, open_pool
+from .malware.router import router as malware_router
 from .schemas import (
     CustomerCreate,
     CustomerUpdate,
@@ -78,6 +79,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(malware_router)
 
 
 @app.get("/", include_in_schema=False)

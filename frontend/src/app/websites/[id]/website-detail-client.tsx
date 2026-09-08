@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   Activity, AlertTriangle, ArrowLeft, Bell, CheckCircle2, ChevronLeft, ChevronRight, CircleUserRound, Clock3,
   ExternalLink, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks,
-  FileText, KeyRound, Menu, Moon, Palette, Plug, RefreshCw, Search, ShieldCheck, Sun,
+  FileText, KeyRound, Menu, Moon, Palette, Plug, RefreshCw, Search, ShieldAlert, ShieldCheck, Sun,
   UsersRound, X, XCircle,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -70,6 +70,21 @@ type SecurityScan = {
   wordpressVersion?: string; phpVersion?: string; plugins: SecurityPlugin[];
   summary: { total: number; verified: number; modified: number; warning: number; unknown: number };
 };
+type MalwareScan = {
+  id: number; websiteId: number; scanType: "quick" | "full";
+  status: "queued" | "running" | "completed" | "failed";
+  cursor: number; totalFiles: number; scannedFiles: number; skippedFiles: number;
+  infoCount: number; warningCount: number; dangerCount: number;
+  agentVersion?: string; rulesVersion?: string; lastError?: string;
+  createdAt: string; startedAt?: string; completedAt?: string; updatedAt: string;
+};
+type MalwareFinding = {
+  id: number; filePath: string; fileHash?: string; component: string;
+  ruleCode: string; severity: "info" | "warning" | "danger";
+  title: string; message: string; lineNumber?: number; snippet?: string;
+  status: "open" | "acknowledged" | "false_positive" | "resolved"; createdAt: string;
+};
+type MalwareFindingsData = { findings: MalwareFinding[]; total: number; page: number; pageSize: number };
 
 const navigation = [
   ["Tổng quan", LayoutDashboard, "/"], ["Khách hàng", UsersRound, "/customers"],
@@ -79,6 +94,9 @@ const labels: Record<string, string> = { healthy: "Ổn định", attention: "C�
 const integrityLabels: Record<string, string> = { verified: "Checksum hợp lệ", modified: "File đã thay đổi", unknown: "Chưa xác định" };
 const riskLabels: Record<string, string> = { low: "Rủi ro thấp", medium: "Cần kiểm tra", high: "Rủi ro cao", unknown: "Chưa xác định" };
 const postStatusLabels: Record<string, string> = { publish: "Đã đăng", draft: "Bản nháp", pending: "Chờ duyệt", private: "Riêng tư", future: "Đã lên lịch" };
+const malwareScanStatusLabels: Record<string, string> = { queued: "Đang chờ", running: "Đang quét", completed: "Đã hoàn tất", failed: "Quét thất bại" };
+const malwareSeverityLabels: Record<string, string> = { info: "Thông tin", warning: "Cảnh báo", danger: "Nguy hiểm" };
+const malwareFindingStatusLabels: Record<string, string> = { open: "Chưa xử lý", acknowledged: "Đã xem", false_positive: "Báo nhầm", resolved: "Đã xử lý" };
 const WORDPRESS_CACHE_TTL_MS = 10 * 60 * 1000;
 const POSTS_SEO_CACHE_TTL_MS = 5 * 60 * 1000;
 const POSTS_PER_PAGE = 20;
@@ -117,6 +135,14 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
   const [securityScan, setSecurityScan] = useState<SecurityScan | null>(null);
   const [securityScanning, setSecurityScanning] = useState(false);
   const [securityPage, setSecurityPage] = useState(1);
+  const [malwareScan, setMalwareScan] = useState<MalwareScan | null>(null);
+  const [malwareFindings, setMalwareFindings] = useState<MalwareFindingsData>({ findings: [], total: 0, page: 1, pageSize: 20 });
+  const [malwareLoading, setMalwareLoading] = useState(true);
+  const [malwareStarting, setMalwareStarting] = useState(false);
+  const [malwareError, setMalwareError] = useState("");
+  const [malwarePage, setMalwarePage] = useState(1);
+  const [malwareSeverity, setMalwareSeverity] = useState("");
+  const [malwareFindingStatus, setMalwareFindingStatus] = useState("");
   const [postsSeo, setPostsSeo] = useState<PostsSeoData | null>(null);
   const [postsSeoLoading, setPostsSeoLoading] = useState(false);
   const [postsSeoError, setPostsSeoError] = useState("");
@@ -208,6 +234,34 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
     }
   }, [websiteId]);
 
+  const loadMalwareScan = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/websites/${websiteId}/malware-scans/latest`, { cache: "no-store" });
+      const result = await response.json() as { scan?: MalwareScan | null; detail?: string };
+      if (!response.ok) throw new Error(result.detail ?? "Không thể tải trạng thái quét malware.");
+      setMalwareScan(result.scan ?? null);
+      setMalwareError("");
+    } catch (reason) {
+      setMalwareError(reason instanceof Error ? reason.message : "Không thể tải trạng thái quét malware.");
+    } finally {
+      setMalwareLoading(false);
+    }
+  }, [websiteId]);
+
+  const loadMalwareFindings = useCallback(async (scanId: number) => {
+    const query = new URLSearchParams({ page: String(malwarePage), pageSize: "20" });
+    if (malwareSeverity) query.set("severity", malwareSeverity);
+    if (malwareFindingStatus) query.set("status", malwareFindingStatus);
+    try {
+      const response = await fetch(`/api/malware-scans/${scanId}/findings?${query}`, { cache: "no-store" });
+      const result = await response.json() as MalwareFindingsData & { detail?: string };
+      if (!response.ok) throw new Error(result.detail ?? "Không thể tải phát hiện malware.");
+      setMalwareFindings(result);
+    } catch (reason) {
+      setMalwareError(reason instanceof Error ? reason.message : "Không thể tải phát hiện malware.");
+    }
+  }, [malwareFindingStatus, malwarePage, malwareSeverity]);
+
   useEffect(() => {
     void load().catch((reason) => setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."));
     const timer = window.setInterval(() => void load().catch(() => undefined), 10000);
@@ -215,6 +269,19 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
   }, [load]);
 
   useEffect(() => { void loadWordPress(); }, [loadWordPress]);
+
+  useEffect(() => { void loadMalwareScan(); }, [loadMalwareScan]);
+
+  useEffect(() => {
+    if (!malwareScan || !["queued", "running"].includes(malwareScan.status)) return;
+    const timer = window.setInterval(() => void loadMalwareScan(), 3000);
+    return () => window.clearInterval(timer);
+  }, [loadMalwareScan, malwareScan]);
+
+  useEffect(() => {
+    if (malwareScan) void loadMalwareFindings(malwareScan.id);
+    else setMalwareFindings({ findings: [], total: 0, page: 1, pageSize: 20 });
+  }, [loadMalwareFindings, malwareScan?.id, malwareScan?.status]);
 
   useEffect(() => {
     if (wordpress?.connected) void loadPostsSeo();
@@ -278,6 +345,11 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
   );
 
   useEffect(() => { setSecurityPage(1); }, [securityScan]);
+
+  const malwarePageCount = Math.max(1, Math.ceil(malwareFindings.total / malwareFindings.pageSize));
+  const malwareProgress = malwareScan?.totalFiles
+    ? Math.min(100, Math.round((malwareScan.cursor / malwareScan.totalFiles) * 100))
+    : malwareScan?.status === "completed" ? 100 : 0;
 
   async function scanNow() {
     setQueuing(true); setError("");
@@ -373,6 +445,58 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
     }
   }
 
+  async function startMalwareScan(scanType: "quick" | "full") {
+    setMalwareStarting(true);
+    setMalwareError("");
+    try {
+      const response = await fetch(`/api/websites/${websiteId}/malware-scans`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scanType }),
+      });
+      const result = await response.json() as { scan?: MalwareScan; detail?: string };
+      if (!response.ok || !result.scan) throw new Error(result.detail ?? "Không thể đưa malware scan vào hàng đợi.");
+      setMalwarePage(1);
+      await loadMalwareScan();
+    } catch (reason) {
+      setMalwareError(reason instanceof Error ? reason.message : "Không thể bắt đầu quét malware.");
+    } finally {
+      setMalwareStarting(false);
+    }
+  }
+
+  async function updateMalwareFinding(findingId: number, status: MalwareFinding["status"]) {
+    setMalwareError("");
+    try {
+      const response = await fetch(`/api/malware-findings/${findingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail ?? "Không thể cập nhật phát hiện.");
+      if (malwareScan) await loadMalwareFindings(malwareScan.id);
+    } catch (reason) {
+      setMalwareError(reason instanceof Error ? reason.message : "Không thể cập nhật phát hiện.");
+    }
+  }
+
+  async function retryMalwareScan() {
+    if (!malwareScan || malwareScan.status !== "failed") return;
+    setMalwareStarting(true);
+    setMalwareError("");
+    try {
+      const response = await fetch(`/api/malware-scans/${malwareScan.id}/retry`, { method: "POST" });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail ?? "Không thể tiếp tục lần quét.");
+      await loadMalwareScan();
+    } catch (reason) {
+      setMalwareError(reason instanceof Error ? reason.message : "Không thể tiếp tục lần quét.");
+    } finally {
+      setMalwareStarting(false);
+    }
+  }
+
   if (error && !data) return <main className="detail-error"><XCircle /><h1>Không mở được website</h1><p>{error}</p><Link href="/websites">Quay lại danh sách</Link></main>;
   if (!data) return <main className="detail-loading"><RefreshCw className="spin" /><p>Đang tải kết quả quét...</p></main>;
   const { website, checks, job } = data;
@@ -400,7 +524,7 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
           {postsSeoError && <div className="wordpress-error"><XCircle size={17} /><span>{postsSeoError}</span></div>}
           {postsSeoLoading && !postsSeo && <div className="seo-loading"><RefreshCw className="spin" size={24} /><strong>Đang tải và phân tích bài viết...</strong><span>Thời gian phụ thuộc số lượng bài trên WordPress.</span></div>}
           {postsSeo && <>
-            {!postsSeo.summary.rankMathDataAvailable && <div className="seo-info"><AlertTriangle size={17} /><span>Chưa đọc được điểm Rank Math. Hãy cài hoặc cập nhật SiteOps Agent 1.6 trên WordPress rồi bấm “Làm mới SEO”.</span></div>}
+            {!postsSeo.summary.rankMathDataAvailable && <div className="seo-info"><AlertTriangle size={17} /><span>Chưa đọc được điểm Rank Math. Hãy cài hoặc cập nhật SiteOps Agent 1.7 trên WordPress rồi bấm “Làm mới SEO”.</span></div>}
             <div className="seo-summary">
               <article><span>Tổng bài viết</span><strong>{postsSeo.summary.total}</strong><small>{postsSeo.summary.published} đã đăng · {postsSeo.summary.draft} bản nháp</small></article>
               <article className="average"><span>Điểm Rank Math trung bình</span><strong>{postsSeo.summary.averageScore ?? "—"}</strong><small>{postsSeo.summary.rankMathScored}/{postsSeo.summary.total} bài đã được Rank Math chấm</small></article>
@@ -415,7 +539,25 @@ export function WebsiteDetailClient({ websiteId }: { websiteId: number }) {
             {filteredSeoPosts.length > 0 && <div className="seo-pagination"><span>Hiển thị {(postPage - 1) * POSTS_PER_PAGE + 1}–{Math.min(postPage * POSTS_PER_PAGE, filteredSeoPosts.length)} trong {filteredSeoPosts.length} bài</span><div><button type="button" disabled={postPage === 1} onClick={() => setPostPage((page) => Math.max(1, page - 1))} aria-label="Trang trước"><ChevronLeft size={15} /></button><strong>Trang {postPage} / {postPageCount}</strong><button type="button" disabled={postPage === postPageCount} onClick={() => setPostPage((page) => Math.min(postPageCount, page + 1))} aria-label="Trang sau"><ChevronRight size={15} /></button></div></div>}
           </>}
         </section>}
-        {wordpress?.connected && <section className="panel security-panel"><div className="panel-head"><div><h2>Kiểm tra plugin bản quyền & mã nguồn</h2><p>So sánh checksum và tìm dấu hiệu mã cần kiểm tra</p></div><div className="wordpress-actions"><a className="secondary" href="/downloads/siteops-agent-rankmath-v16.zip" download="siteops-agent-rankmath-v16.zip">Cài Agent 1.6</a><button className="primary" type="button" disabled={securityScanning} onClick={() => void scanPluginSecurity()}><ShieldCheck size={16} className={securityScanning ? "spin" : ""} />{securityScanning ? "Đang quét..." : "Quét bảo mật plugin"}</button></div></div>
+        {wordpress?.connected && <section className="panel malware-panel">
+          <div className="panel-head"><div><h2>Malware Scanner</h2><p>Quét mã độc chỉ đọc, không tự động sửa hoặc xóa file</p></div><div className="wordpress-actions"><a className="secondary" href="/downloads/siteops-malware-agent-v17.zip" download="siteops-malware-agent-v17.zip">Cài Agent 1.7</a>{malwareScan?.status === "failed" && <button className="secondary" type="button" disabled={malwareStarting} onClick={() => void retryMalwareScan()}><RefreshCw size={16} className={malwareStarting ? "spin" : ""} />Tiếp tục từ {malwareScan.cursor}</button>}<button className="secondary" type="button" disabled={malwareStarting || malwareScan?.status === "queued" || malwareScan?.status === "running"} onClick={() => void startMalwareScan("quick")}><ShieldAlert size={16} />Quét nhanh</button><button className="primary" type="button" disabled={malwareStarting || malwareScan?.status === "queued" || malwareScan?.status === "running"} onClick={() => void startMalwareScan("full")}><RefreshCw size={16} className={malwareStarting || malwareScan?.status === "running" ? "spin" : ""} />Quét toàn bộ</button></div></div>
+          {malwareError && <div className="wordpress-error"><XCircle size={17} /><span>{malwareError}</span></div>}
+          {malwareLoading && !malwareScan && <div className="security-intro"><RefreshCw className="spin" size={26} /><strong>Đang tải trạng thái quét...</strong></div>}
+          {!malwareLoading && !malwareScan && <div className="security-intro"><ShieldAlert size={30} /><strong>Chưa có lần quét malware</strong><p>Cài và kích hoạt Agent 1.7 trên WordPress. Nên chạy “Quét nhanh” trước; “Quét toàn bộ” sẽ đọc nhiều file hơn và mất nhiều thời gian hơn.</p></div>}
+          {malwareScan && <>
+            <div className={`malware-run ${malwareScan.status}`}><div><strong>{malwareScanStatusLabels[malwareScan.status] ?? malwareScan.status}</strong><span>{malwareScan.status === "running" ? `Đã quét ${malwareScan.scannedFiles}/${malwareScan.totalFiles || "?"} file` : malwareScan.status === "failed" ? malwareScan.lastError ?? "Không thể hoàn thành lần quét." : `${malwareScan.scanType === "quick" ? "Quét nhanh" : "Quét toàn bộ"} · tạo lúc ${formatDate(malwareScan.createdAt)}`}</span></div><b>{malwareProgress}%</b></div>
+            <div className="malware-progress" aria-label={`Tiến độ ${malwareProgress}%`}><span style={{ width: `${malwareProgress}%` }} /></div>
+            <div className="security-summary malware-summary"><article><span>Tổng file</span><strong>{malwareScan.totalFiles}</strong></article><article className="safe"><span>Đã quét</span><strong>{malwareScan.scannedFiles}</strong></article><article className="danger"><span>Nguy hiểm</span><strong>{malwareScan.dangerCount}</strong></article><article className="warn"><span>Cảnh báo</span><strong>{malwareScan.warningCount}</strong></article><article><span>Thông tin</span><strong>{malwareScan.infoCount}</strong></article></div>
+            <div className="malware-toolbar"><div><select value={malwareSeverity} onChange={(event) => { setMalwareSeverity(event.target.value); setMalwarePage(1); }} aria-label="Lọc mức độ"><option value="">Tất cả mức độ</option><option value="danger">Nguy hiểm</option><option value="warning">Cảnh báo</option><option value="info">Thông tin</option></select><select value={malwareFindingStatus} onChange={(event) => { setMalwareFindingStatus(event.target.value); setMalwarePage(1); }} aria-label="Lọc trạng thái xử lý"><option value="">Tất cả trạng thái</option><option value="open">Chưa xử lý</option><option value="acknowledged">Đã xem</option><option value="false_positive">Báo nhầm</option><option value="resolved">Đã xử lý</option></select></div><span>{malwareFindings.total} phát hiện</span></div>
+            <div className="table-wrap malware-table"><table><thead><tr><th>Mức độ</th><th>File</th><th>Phát hiện</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+              {malwareFindings.findings.map((finding) => <tr key={finding.id}><td><span className={`malware-severity ${finding.severity}`}>{malwareSeverityLabels[finding.severity]}</span></td><td><div className="malware-file"><strong>{finding.filePath}</strong><small>{finding.component}{finding.lineNumber ? ` · dòng ${finding.lineNumber}` : ""}</small></div></td><td><span className="finding-text"><strong>{finding.title}</strong>{finding.message}</span>{finding.snippet && <code title={finding.snippet}>{finding.snippet}</code>}</td><td><span className={`finding-status ${finding.status}`}>{malwareFindingStatusLabels[finding.status]}</span></td><td><div className="finding-actions"><button type="button" disabled={finding.status === "acknowledged"} onClick={() => void updateMalwareFinding(finding.id, "acknowledged")}>Đã xem</button><button type="button" disabled={finding.status === "false_positive"} onClick={() => void updateMalwareFinding(finding.id, "false_positive")}>Báo nhầm</button></div></td></tr>)}
+              {malwareFindings.findings.length === 0 && <tr><td colSpan={5}><div className="empty-state"><ShieldCheck size={24} /><strong>Không có phát hiện phù hợp</strong><span>{malwareScan.status === "completed" ? "Không tìm thấy dấu hiệu theo bộ lọc hiện tại." : "Kết quả sẽ xuất hiện trong lúc quét."}</span></div></td></tr>}
+            </tbody></table></div>
+            {malwareFindings.total > 0 && <div className="seo-pagination"><span>Hiển thị {(malwarePage - 1) * malwareFindings.pageSize + 1}–{Math.min(malwarePage * malwareFindings.pageSize, malwareFindings.total)} trong {malwareFindings.total} phát hiện</span><div><button type="button" disabled={malwarePage === 1} onClick={() => setMalwarePage((page) => Math.max(1, page - 1))} aria-label="Trang phát hiện trước"><ChevronLeft size={15} /></button><strong>Trang {malwarePage} / {malwarePageCount}</strong><button type="button" disabled={malwarePage === malwarePageCount} onClick={() => setMalwarePage((page) => Math.min(malwarePageCount, page + 1))} aria-label="Trang phát hiện sau"><ChevronRight size={15} /></button></div></div>}
+            <footer className="security-footer"><span>Agent {malwareScan.agentVersion ?? "—"} · Bộ luật {malwareScan.rulesVersion ?? "—"} · bỏ qua {malwareScan.skippedFiles} file</span><span>{malwareScan.completedAt ? `Hoàn tất: ${formatDate(malwareScan.completedAt)}` : `Cập nhật: ${formatDate(malwareScan.updatedAt)}`}</span></footer>
+          </>}
+        </section>}
+        {wordpress?.connected && <section className="panel security-panel"><div className="panel-head"><div><h2>Kiểm tra plugin bản quyền & mã nguồn</h2><p>So sánh checksum và tìm dấu hiệu mã cần kiểm tra</p></div><div className="wordpress-actions"><button className="primary" type="button" disabled={securityScanning} onClick={() => void scanPluginSecurity()}><ShieldCheck size={16} className={securityScanning ? "spin" : ""} />{securityScanning ? "Đang quét..." : "Quét bảo mật plugin"}</button></div></div>
           {!securityScan && <div className="security-intro"><ShieldCheck size={28} /><strong>Chưa có kết quả kiểm tra</strong><p>Tải và kích hoạt SiteOps Agent trên WordPress, sau đó bấm “Quét bảo mật plugin”. Kết quả chỉ là đánh giá kỹ thuật, không thay thế xác nhận license từ nhà cung cấp.</p></div>}
           {securityScan && <><div className="security-summary"><article><span>Tổng plugin</span><strong>{securityScan.summary.total}</strong></article><article className="safe"><span>Checksum hợp lệ</span><strong>{securityScan.summary.verified}</strong></article><article className="warn"><span>Cần kiểm tra</span><strong>{securityScan.summary.warning}</strong></article><article className="danger"><span>File thay đổi</span><strong>{securityScan.summary.modified}</strong></article><article><span>Chưa xác định</span><strong>{securityScan.summary.unknown}</strong></article></div><div className="table-wrap security-table"><table><thead><tr><th>Plugin</th><th>Nguồn / bản quyền</th><th>Tính toàn vẹn</th><th>Mức rủi ro</th><th>Phát hiện</th></tr></thead><tbody>{pagedSecurityPlugins.map((plugin) => <tr key={plugin.plugin}><td><strong>{plugin.name}</strong><small>Phiên bản {plugin.version} · {plugin.active ? "Đang bật" : "Đang tắt"}</small></td><td><span className="security-source">{plugin.source === "wordpress.org" ? "WordPress.org" : "Trả phí / tùy chỉnh"}</span><small>{plugin.licenseStatus === "not-required" ? "Không cần license trả phí" : "Cần xác minh với nhà cung cấp"}</small></td><td><span className={`security-badge ${plugin.integrity}`}>{integrityLabels[plugin.integrity]}</span></td><td><span className={`security-badge risk-${plugin.risk}`}>{riskLabels[plugin.risk]}</span></td><td><span className="finding-text">{plugin.findings[0] ?? "Không có dấu hiệu bất thường"}</span>{plugin.changedFiles.length > 0 && <small title={plugin.changedFiles.join("\n")}>{plugin.changedFiles.length} file cần xem</small>}</td></tr>)}</tbody></table></div><div className="seo-pagination"><span>Hiển thị {(securityPage - 1) * PLUGINS_PER_PAGE + 1}–{Math.min(securityPage * PLUGINS_PER_PAGE, securityScan.plugins.length)} trong {securityScan.plugins.length} plugin</span><div><button type="button" disabled={securityPage === 1} onClick={() => setSecurityPage((page) => Math.max(1, page - 1))} aria-label="Trang plugin trước"><ChevronLeft size={15} /></button><strong>Trang {securityPage} / {securityPageCount}</strong><button type="button" disabled={securityPage === securityPageCount} onClick={() => setSecurityPage((page) => Math.min(securityPageCount, page + 1))} aria-label="Trang plugin sau"><ChevronRight size={15} /></button></div></div><footer className="security-footer"><span>Agent {securityScan.agentVersion ?? "—"} · WordPress {securityScan.wordpressVersion ?? "—"} · PHP {securityScan.phpVersion ?? "—"}</span><span>Lần quét: {formatDate(securityScan.checkedAt ?? securityScan.scannedAt ?? null)}</span></footer></>}
         </section>}

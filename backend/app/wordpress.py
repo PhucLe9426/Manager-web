@@ -346,9 +346,17 @@ def run_plugin_security_scan(site_url: str, username: str, password: str) -> dic
         site_url,
         username,
         password,
-        "plugins?context=edit&siteops_security_scan_v16=1",
+        "plugins?context=edit&siteops_security_scan_v17=1",
         timeout_seconds=180,
     )
+    if not (isinstance(result, dict) and isinstance(result.get("siteopsPayload"), str)):
+        result = wordpress_request(
+            site_url,
+            username,
+            password,
+            "plugins?context=edit&siteops_security_scan_v16=1",
+            timeout_seconds=180,
+        )
     if not (isinstance(result, dict) and isinstance(result.get("siteopsPayload"), str)):
         result = wordpress_request(
             site_url,

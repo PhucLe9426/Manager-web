@@ -278,6 +278,36 @@ tbody tr:hover { background: #f7fbfa; }
 .security-badge.unknown, .security-badge.risk-unknown { border-color: #d8e0de; background: #f3f6f5; color: #6f7d83; }
 .finding-text { display: block; max-width: 310px; color: #51646c; font-size: 11px; line-height: 1.45; }
 .security-footer { display: flex; justify-content: space-between; gap: 18px; border-top: 1px solid var(--line); padding: 12px 20px; color: var(--muted); font-size: 10px; }
+.malware-panel { margin-top: 20px; }
+.malware-run { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 20px 9px; }
+.malware-run > div { display: grid; gap: 3px; }
+.malware-run strong { color: var(--ink); font-size: 13px; }
+.malware-run span { color: var(--muted); font-size: 10px; }
+.malware-run b { color: var(--teal); font-size: 18px; }
+.malware-run.failed b, .malware-run.failed strong { color: #b1433c; }
+.malware-progress { height: 6px; margin: 0 20px 4px; overflow: hidden; border-radius: 999px; background: #e5edeb; }
+.malware-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--teal), #65c9a9); transition: width .3s ease; }
+.malware-summary { padding-top: 14px; }
+.malware-toolbar { display: flex; min-height: 57px; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 10px 20px; }
+.malware-toolbar > div { display: flex; gap: 8px; }
+.malware-toolbar select { min-height: 35px; border: 1px solid var(--line); border-radius: 9px; background: white; padding: 0 32px 0 10px; color: var(--ink); font: inherit; font-size: 11px; }
+.malware-toolbar > span { color: var(--muted); font-size: 11px; }
+.malware-table table { min-width: 1050px; }
+.malware-table td { height: 76px; }
+.malware-severity, .finding-status { display: inline-flex; border: 1px solid; border-radius: 15px; padding: 5px 8px; font-size: 10px; font-weight: 750; white-space: nowrap; }
+.malware-severity.danger { border-color: #edc4c0; background: #fdefed; color: #b1433c; }
+.malware-severity.warning { border-color: #ead4a9; background: #fff5df; color: #9b650f; }
+.malware-severity.info { border-color: #c5dce5; background: #eef7fa; color: #327287; }
+.finding-status { border-color: #d8e0de; background: #f3f6f5; color: #60747c; }
+.finding-status.acknowledged, .finding-status.resolved { border-color: #bee2d2; background: #e9f8f0; color: #247052; }
+.finding-status.false_positive { border-color: #c5dce5; background: #eef7fa; color: #327287; }
+.malware-file { display: grid; max-width: 330px; gap: 4px; }
+.malware-file strong { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
+.malware-table .finding-text strong { display: block; margin-bottom: 3px; color: var(--ink); }
+.malware-table code { display: block; max-width: 310px; margin-top: 5px; overflow: hidden; color: #8a5b1a; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.finding-actions { display: flex; gap: 6px; }
+.finding-actions button { min-height: 30px; border: 1px solid var(--line); border-radius: 8px; background: white; padding: 0 8px; color: var(--teal); font-size: 9px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.finding-actions button:disabled { cursor: default; opacity: .45; }
 
 html[data-theme="dark"] {
   color-scheme: dark;
@@ -404,12 +434,22 @@ html[data-theme="dark"] .security-badge.risk-high { border-color: #673d39; backg
 html[data-theme="dark"] .security-badge.risk-medium { border-color: #5a4828; background: #46361c; color: #edc069; }
 html[data-theme="dark"] .security-badge.unknown,
 html[data-theme="dark"] .security-badge.risk-unknown { border-color: #34464d; background: #19272d; color: #91a2a9; }
+html[data-theme="dark"] .malware-progress { background: #263941; }
+html[data-theme="dark"] .malware-toolbar select,
+html[data-theme="dark"] .finding-actions button { border-color: #2b3f48; background: #14242c; color: #b8d8d1; }
+html[data-theme="dark"] .malware-severity.danger { border-color: #673d39; background: #442525; color: #f29a94; }
+html[data-theme="dark"] .malware-severity.warning { border-color: #5a4828; background: #46361c; color: #edc069; }
+html[data-theme="dark"] .malware-severity.info,
+html[data-theme="dark"] .finding-status.false_positive { border-color: #315060; background: #182f39; color: #83c8df; }
+html[data-theme="dark"] .finding-status { border-color: #34464d; background: #19272d; color: #91a2a9; }
+html[data-theme="dark"] .finding-status.acknowledged,
+html[data-theme="dark"] .finding-status.resolved { border-color: #315c4b; background: #17382d; color: #7bd4ab; }
 html[data-theme="dark"] .finding-text { color: #a7b7bd; }
 html[data-theme="dark"] ::selection { background: #28796a; color: white; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
 @media (max-width: 1180px) { .metrics { grid-template-columns: repeat(2, 1fr); }.dashboard-grid { grid-template-columns: 1fr; }.right-column { grid-template-columns: repeat(2, 1fr); }.detail-metrics { grid-template-columns: repeat(2, 1fr); }.detail-grid { grid-template-columns: 1fr; }.security-summary { grid-template-columns: repeat(3, 1fr); }.seo-summary { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 760px) { .sidebar, .sidebar.collapsed { width: 244px; transform: translateX(-100%); }.sidebar.open { transform: translateX(0); box-shadow: 15px 0 50px #10263355; }.sidebar-toggle { display: none; }.sidebar.collapsed .brand { justify-content: flex-start; padding: 0 24px; }.sidebar.collapsed .brand-mark { display: grid; }.sidebar.collapsed .brand-copy { display: block; }.sidebar.collapsed nav { padding: 28px 12px; }.sidebar.collapsed nav > p, .sidebar.collapsed .nav-label { display: block; }.sidebar.collapsed nav a, .sidebar.collapsed nav button { justify-content: flex-start; gap: 12px; padding: 11px 12px; }.sidebar.collapsed .sidebar-note { display: grid; }.content, .sidebar.collapsed + .content { padding-left: 0; }.topbar { height: 68px; padding: 0 16px; }.mobile-menu { display: grid; }.search { width: min(320px, 50vw); }.user-area > span:last-child, .avatar { display: none; }main { padding: 25px 16px 40px; }.heading { align-items: flex-start; }.metrics, .quick-cards, .right-column { grid-template-columns: 1fr; }.heading span { max-width: 390px; }.detail-heading { align-items: flex-start; flex-direction: column; }.detail-actions { width: 100%; }.detail-actions > * { flex: 1; }.strategy-grid, .wordpress-columns { grid-template-columns: 1fr; }.wordpress-actions .danger-button { display: none; } }
-@media (max-width: 520px) { .table-search { width: 100%; }.heading { flex-direction: column; }.heading-actions { width: 100%; }.heading-actions > * { flex: 1; }.heading > .primary, .heading .primary { width: 100%; }.metrics { grid-template-columns: 1fr; }.metrics article { padding: 17px; }.detail-metrics { grid-template-columns: 1fr; }.detail-domain h1 { font-size: 22px; }.security-summary { grid-template-columns: 1fr 1fr; }.security-panel .panel-head { align-items: flex-start; flex-direction: column; }.security-panel .wordpress-actions { width: 100%; flex-wrap: wrap; }.security-panel .wordpress-actions > * { flex: 1; }.security-footer { flex-direction: column; } }
+@media (max-width: 520px) { .table-search { width: 100%; }.heading { flex-direction: column; }.heading-actions { width: 100%; }.heading-actions > * { flex: 1; }.heading > .primary, .heading .primary { width: 100%; }.metrics { grid-template-columns: 1fr; }.metrics article { padding: 17px; }.detail-metrics { grid-template-columns: 1fr; }.detail-domain h1 { font-size: 22px; }.security-summary { grid-template-columns: 1fr 1fr; }.security-panel .panel-head, .malware-panel .panel-head { align-items: flex-start; flex-direction: column; }.security-panel .wordpress-actions, .malware-panel .wordpress-actions { width: 100%; flex-wrap: wrap; }.security-panel .wordpress-actions > *, .malware-panel .wordpress-actions > * { flex: 1; }.security-footer { flex-direction: column; }.malware-toolbar { align-items: stretch; flex-direction: column; }.malware-toolbar > div { flex-direction: column; } }
 @media (max-width: 700px) {
   .seo-posts-panel .panel-head { align-items: flex-start; flex-direction: column; }
   .seo-posts-panel .panel-head .secondary { width: 100%; }
