@@ -33,6 +33,24 @@ Server `SiteOps PostgreSQL` được tạo sẵn với các thông số:
 Frontend chuyển tiếp các đường dẫn `/api/*` sang FastAPI thông qua biến
 `API_INTERNAL_URL`, vì vậy trình duyệt không cần gọi chéo cổng và không gặp lỗi CORS.
 
+## Cấu trúc backend
+
+```text
+backend/app/
+├── core/           # Tiện ích và response dùng chung
+├── customers/      # API và schema khách hàng
+├── websites/       # API, schema và chuẩn hóa URL website
+├── monitoring/     # Hàng đợi uptime, SSL và PageSpeed
+├── wordpress_api/  # Kết nối, bài viết SEO và bảo mật plugin
+├── malware/        # Router, service, repository và schema malware
+├── database.py     # Pool kết nối và migration PostgreSQL
+├── wordpress.py    # Client giao tiếp WordPress REST API
+└── main.py         # Khởi tạo FastAPI và đăng ký router
+```
+
+Các module giữ nguyên URL API cũ nên frontend không phụ thuộc vào cách tổ chức nội
+bộ của backend. `main.py` không chứa nghiệp vụ hoặc câu truy vấn dữ liệu.
+
 ## Cấu hình
 
 Sao chép `.env.example` thành `.env`, sau đó điền:
