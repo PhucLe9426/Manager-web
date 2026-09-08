@@ -1,3 +1,5 @@
+"""Low-level client for the authenticated WordPress REST API."""
+
 import base64
 import hashlib
 import json

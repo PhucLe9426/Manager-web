@@ -1,5 +1,5 @@
 from ..core.errors import ServiceError
-from ..wordpress import (
+from .client import (
     WordPressError,
     decrypt_password,
     encrypt_password,

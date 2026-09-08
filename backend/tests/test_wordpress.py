@@ -1,6 +1,6 @@
 import pytest
 
-from app.wordpress import (
+from app.wordpress_api.client import (
     WordPressError,
     analyze_post_seo,
     decrypt_password,

@@ -41,10 +41,9 @@ backend/app/
 ├── customers/      # router/service/repository/schemas khách hàng
 ├── websites/       # router/service/repository/schemas website
 ├── monitoring/     # router/service/repository/schemas hàng đợi quét
-├── wordpress_api/  # router/service/repository/schemas WordPress
+├── wordpress_api/  # router/service/repository/schemas/client WordPress
 ├── malware/        # Router, service, repository và schema malware
 ├── database.py     # Pool kết nối và migration PostgreSQL
-├── wordpress.py    # Client giao tiếp WordPress REST API
 └── main.py         # Khởi tạo FastAPI và đăng ký router
 ```
 
@@ -54,6 +53,7 @@ Mỗi module nghiệp vụ dùng cùng quy ước:
 - `service.py`: kiểm tra và điều phối nghiệp vụ.
 - `repository.py`: truy vấn và ghi dữ liệu PostgreSQL.
 - `schemas.py`: dữ liệu đầu vào/đầu ra bằng Pydantic.
+- `client.py`: chỉ có ở module WordPress, giao tiếp WordPress REST API bên ngoài.
 
 Các module giữ nguyên URL API cũ nên frontend không phụ thuộc vào cách tổ chức nội
 bộ của backend. `main.py` không chứa nghiệp vụ hoặc câu truy vấn dữ liệu.
