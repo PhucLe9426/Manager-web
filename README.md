@@ -38,15 +38,22 @@ Frontend chuyển tiếp các đường dẫn `/api/*` sang FastAPI thông qua b
 ```text
 backend/app/
 ├── core/           # Tiện ích và response dùng chung
-├── customers/      # API và schema khách hàng
-├── websites/       # API, schema và chuẩn hóa URL website
-├── monitoring/     # Hàng đợi uptime, SSL và PageSpeed
-├── wordpress_api/  # Kết nối, bài viết SEO và bảo mật plugin
+├── customers/      # router/service/repository/schemas khách hàng
+├── websites/       # router/service/repository/schemas website
+├── monitoring/     # router/service/repository/schemas hàng đợi quét
+├── wordpress_api/  # router/service/repository/schemas WordPress
 ├── malware/        # Router, service, repository và schema malware
 ├── database.py     # Pool kết nối và migration PostgreSQL
 ├── wordpress.py    # Client giao tiếp WordPress REST API
 └── main.py         # Khởi tạo FastAPI và đăng ký router
 ```
+
+Mỗi module nghiệp vụ dùng cùng quy ước:
+
+- `router.py`: khai báo endpoint và xử lý HTTP.
+- `service.py`: kiểm tra và điều phối nghiệp vụ.
+- `repository.py`: truy vấn và ghi dữ liệu PostgreSQL.
+- `schemas.py`: dữ liệu đầu vào/đầu ra bằng Pydantic.
 
 Các module giữ nguyên URL API cũ nên frontend không phụ thuộc vào cách tổ chức nội
 bộ của backend. `main.py` không chứa nghiệp vụ hoặc câu truy vấn dữ liệu.
