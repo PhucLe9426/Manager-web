@@ -296,6 +296,30 @@ def build_report_pdf(report: dict) -> bytes:
     if report.get("summary"):
         story.extend([Spacer(1, 5 * mm), KeepTogether([Paragraph("Tổng kết", heading), Table([[Paragraph(_safe(report["summary"]), body)]], colWidths=[178 * mm], style=TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#e8f5f1")), ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#cce3dc")), ("LEFTPADDING", (0, 0), (-1, -1), 9), ("RIGHTPADDING", (0, 0), (-1, -1), 9), ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9)]))])])
 
+    glossary_rows = [
+        [Paragraph("Chỉ số", table_header), Paragraph("Giải thích dễ hiểu", table_header)],
+        [Paragraph("Uptime", body), Paragraph("Tỷ lệ thời gian website hoạt động bình thường. Càng gần 100% càng tốt.", small)],
+        [Paragraph("Thời gian phản hồi", body), Paragraph("Thời gian máy chủ bắt đầu trả lời. Dưới 800 ms là tốt; số càng thấp càng nhanh.", small)],
+        [Paragraph("PageSpeed", body), Paragraph("Điểm tốc độ và trải nghiệm trên thang 100. Từ 90 là tốt, 50-89 cần cải thiện, dưới 50 là kém.", small)],
+        [Paragraph("FCP", body), Paragraph("Thời gian nội dung đầu tiên xuất hiện. Dưới 1,8 giây là tốt.", small)],
+        [Paragraph("LCP", body), Paragraph("Thời gian nội dung chính lớn nhất hiển thị. Dưới 2,5 giây là tốt.", small)],
+        [Paragraph("CLS", body), Paragraph("Mức độ bố cục bị nhảy khi tải trang. Dưới 0,1 là tốt; càng gần 0 càng ổn định.", small)],
+        [Paragraph("Checksum hợp lệ", body), Paragraph("File plugin trùng với bản chính thức, chưa phát hiện bị chỉnh sửa.", small)],
+        [Paragraph("Rank Math", body), Paragraph("Điểm SEO bài viết trên thang 100. Bài dưới 70 nên được tối ưu thêm.", small)],
+        [Paragraph("Malware nguy hiểm", body), Paragraph("Dấu hiệu rủi ro cao cần kỹ thuật viên kiểm tra sớm; không nên tự động xóa file.", small)],
+        [Paragraph("Cảnh báo malware", body), Paragraph("Dấu hiệu đáng ngờ cần xem thêm, chưa đủ để kết luận chắc chắn là mã độc.", small)],
+    ]
+    glossary = Table(glossary_rows, colWidths=[43 * mm, 135 * mm], repeatRows=1, style=TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#12394a")),
+        ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#cfdcda")),
+        ("INNERGRID", (0, 0), (-1, -1), .3, colors.HexColor("#dce6e3")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7faf9")]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 4.5),
+    ]))
+    story.append(KeepTogether([Spacer(1, 6 * mm), Paragraph("Giải thích chỉ số", heading), glossary]))
+
     def page_footer(canvas, doc):
         canvas.saveState()
         canvas.setFont("SiteOps", 7)
