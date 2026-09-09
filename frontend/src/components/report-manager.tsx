@@ -40,7 +40,11 @@ type ReportContext = {
     desktopClsScore?: number | null; desktopCheckedAt?: string;
   } | null;
   pluginScan: { summary?: { total?: number; verified?: number; warning?: number; modified?: number }; checkedAt?: string } | null;
-  seoScan: { summary?: { total?: number; published?: number; averageScore?: number | null; needsAttention?: number }; checkedAt?: string } | null;
+  seoScan: {
+    summary?: { total?: number; published?: number; averageScore?: number | null; needsAttention?: number };
+    posts?: { id?: number; title?: string; date?: string; status?: string; seoScore?: number | null }[];
+    checkedAt?: string;
+  } | null;
   malwareScan: { status?: string; scanType?: string; scannedFiles?: number; totalFiles?: number; dangerCount?: number; warningCount?: number; completedAt?: string; updatedAt?: string } | null;
 };
 
@@ -93,6 +97,10 @@ export function ReportManager({ websites }: { websites: Website[] }) {
   const [contextLoading, setContextLoading] = useState(false);
 
   const selectedWebsite = websites.find((website) => website.id === Number(websiteId));
+  const periodSeoPosts = useMemo(() => (context?.seoScan?.posts ?? []).filter((post) => {
+    const postDate = post.date?.slice(0, 10);
+    return Boolean(postDate && periodStart && periodEnd && postDate >= periodStart && postDate <= periodEnd);
+  }), [context?.seoScan?.posts, periodEnd, periodStart]);
 
   const loadReports = useCallback(async () => {
     try {
@@ -223,7 +231,7 @@ export function ReportManager({ websites }: { websites: Website[] }) {
           </div>
           <div className="preview-auto-data">
             <article><span>Plugin WordPress</span><b>{contextLoading ? "Đang tải..." : context?.pluginScan ? `${context.pluginScan.summary?.total ?? 0} plugin · ${(context.pluginScan.summary?.warning ?? 0) + (context.pluginScan.summary?.modified ?? 0)} cần kiểm tra` : "Chưa có dữ liệu quét"}</b><small>{displayDateTime(context?.pluginScan?.checkedAt)}</small></article>
-            <article><span>Bài viết & SEO</span><b>{contextLoading ? "Đang tải..." : context?.seoScan ? `${context.seoScan.summary?.total ?? 0} bài · Rank Math TB ${context.seoScan.summary?.averageScore ?? "-"}` : "Chưa có dữ liệu quét"}</b><small>{displayDateTime(context?.seoScan?.checkedAt)}</small></article>
+            <article><span>Bài viết & SEO</span><b>{contextLoading ? "Đang tải..." : context?.seoScan ? `${periodSeoPosts.length} bài trong kỳ · Rank Math TB ${context.seoScan.summary?.averageScore ?? "-"}` : "Chưa có dữ liệu quét"}</b><small>{displayDateTime(context?.seoScan?.checkedAt)}</small></article>
             <article><span>Malware Scanner</span><b>{contextLoading ? "Đang tải..." : context?.malwareScan ? `${context.malwareScan.scannedFiles ?? 0}/${context.malwareScan.totalFiles ?? 0} file · ${(context.malwareScan.dangerCount ?? 0) + (context.malwareScan.warningCount ?? 0)} cảnh báo` : "Chưa có dữ liệu quét"}</b><small>{displayDateTime(context?.malwareScan?.completedAt ?? context?.malwareScan?.updatedAt)}</small></article>
           </div>
           <h4>Công việc đã thực hiện</h4>
