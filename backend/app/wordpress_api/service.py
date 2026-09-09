@@ -50,9 +50,11 @@ def inventory(website_id: int) -> dict:
 def posts_seo(website_id: int) -> dict:
     website = _connected_website(website_id)
     try:
-        return get_posts_seo(website["url"], website["username"], _password(website))
+        result = get_posts_seo(website["url"], website["username"], _password(website))
     except WordPressError as error:
         raise ServiceError(str(error), error.status_code) from error
+    saved = repository.save_posts_seo_scan(website_id, result)
+    return {**result, **saved}
 
 
 def connect(website_id: int, payload: WordPressConnectionCreate) -> dict:

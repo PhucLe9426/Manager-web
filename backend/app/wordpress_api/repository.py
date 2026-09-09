@@ -78,6 +78,33 @@ def latest_security_scan(website_id: int) -> tuple[bool, dict | None]:
     return True, scan
 
 
+def save_posts_seo_scan(website_id: int, result: dict) -> dict:
+    with connection() as conn:
+        saved = conn.execute(
+            """
+            INSERT INTO wordpress_seo_scans (website_id, summary, posts, checked_at)
+            VALUES (%s, %s::jsonb, %s::jsonb, NOW())
+            RETURNING id, checked_at AS "checkedAt"
+            """,
+            (
+                website_id,
+                json.dumps(result.get("summary", {})),
+                json.dumps(result.get("posts", [])),
+            ),
+        ).fetchone()
+        conn.execute(
+            """
+            DELETE FROM wordpress_seo_scans
+            WHERE website_id = %s AND id NOT IN (
+              SELECT id FROM wordpress_seo_scans
+              WHERE website_id = %s ORDER BY checked_at DESC LIMIT 20
+            )
+            """,
+            (website_id, website_id),
+        )
+    return saved
+
+
 def add_audit(conn, action: str, website_id: int, metadata: dict | None = None) -> None:
     if metadata is None:
         conn.execute(

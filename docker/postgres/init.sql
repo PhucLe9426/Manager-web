@@ -184,3 +184,56 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_unread_time
 ON notifications(is_read, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id BIGSERIAL PRIMARY KEY,
+  website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  title VARCHAR(240) NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  summary TEXT,
+  system_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (period_end >= period_start)
+);
+
+CREATE TABLE IF NOT EXISTS report_items (
+  id BIGSERIAL PRIMARY KEY,
+  report_id BIGINT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+  performed_date DATE NOT NULL,
+  description TEXT NOT NULL,
+  result TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_website_time
+ON reports(website_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_report_items_report_order
+ON report_items(report_id, sort_order, id);
+
+CREATE TABLE IF NOT EXISTS report_item_attachments (
+  id BIGSERIAL PRIMARY KEY,
+  report_item_id BIGINT NOT NULL REFERENCES report_items(id) ON DELETE CASCADE,
+  original_name VARCHAR(255) NOT NULL,
+  stored_name VARCHAR(100) NOT NULL UNIQUE,
+  mime_type VARCHAR(80) NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_report_attachments_item
+ON report_item_attachments(report_item_id, created_at);
+
+CREATE TABLE IF NOT EXISTS wordpress_seo_scans (
+  id BIGSERIAL PRIMARY KEY,
+  website_id BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  posts JSONB NOT NULL DEFAULT '[]'::jsonb,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wp_seo_scans_website_time
+ON wordpress_seo_scans(website_id, checked_at DESC);

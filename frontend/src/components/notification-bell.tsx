@@ -37,7 +37,12 @@ export function NotificationBell() {
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(), 15000);
-    return () => window.clearInterval(timer);
+    const refresh = () => void load();
+    window.addEventListener("siteops:notifications-changed", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("siteops:notifications-changed", refresh);
+    };
   }, [load]);
 
   useEffect(() => {

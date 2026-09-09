@@ -5,11 +5,13 @@ import {
   Clock3, FileBarChart, Gauge, Globe2, LayoutDashboard, ListChecks, Menu,
   Moon, Pencil, Plus, RefreshCw, Search, Server, ShieldCheck, Sun, UsersRound, X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/hooks/use-theme";
 import { NotificationBell } from "@/components/notification-bell";
+import { ReportManager } from "@/components/report-manager";
+import { publishNotification } from "@/lib/notifications";
 
 type Website = {
   id: number;
@@ -69,12 +71,13 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [query, setQuery] = useState("");
-  const [message, setMessage] = useState("");
   const [modalError, setModalError] = useState("");
   const [activePage] = useState<(typeof navItems)[number][0]>(initialPage);
   const [scanningIds, setScanningIds] = useState<number[]>([]);
   const [scanningAll, setScanningAll] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const websiteLoadFailed = useRef(false);
+  const customerLoadFailed = useRef(false);
 
   const loadWebsites = useCallback(async () => {
     try {
@@ -82,8 +85,12 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
       if (!response.ok) throw new Error();
       const data = (await response.json()) as { websites: Website[] };
       setWebsites(data.websites);
+      websiteLoadFailed.current = false;
     } catch {
-      setMessage("Không thể kết nối cơ sở dữ liệu. Vui lòng kiểm tra PostgreSQL.");
+      if (!websiteLoadFailed.current) {
+        websiteLoadFailed.current = true;
+        void publishNotification({ category: "system", severity: "danger", title: "Không thể tải website", message: "Hệ thống sẽ tự động thử lại." });
+      }
     } finally {
       setLoading(false);
     }
@@ -95,8 +102,12 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
       if (!response.ok) throw new Error();
       const data = (await response.json()) as { customers: Customer[] };
       setCustomers(data.customers);
+      customerLoadFailed.current = false;
     } catch {
-      setMessage("Không thể tải danh sách khách hàng.");
+      if (!customerLoadFailed.current) {
+        customerLoadFailed.current = true;
+        void publishNotification({ category: "system", severity: "danger", title: "Không thể tải khách hàng", message: "Hệ thống sẽ tự động thử lại." });
+      }
     }
   }, []);
 
@@ -146,7 +157,6 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
 
   async function addWebsite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("");
     setModalError("");
     try {
       const data = new FormData(event.currentTarget);
@@ -155,10 +165,14 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customerId: Number(data.get("customerId")), domain: data.get("domain") }),
       });
-      const result = (await response.json()) as { message?: string };
+      const result = (await response.json()) as { website?: { id: number; domain?: string; url?: string }; message?: string };
       if (!response.ok) { setModalError(result.message ?? "Không thể thêm website."); return; }
       setModalType(null);
-      setMessage("Đã thêm website và đưa vào hàng đợi quét.");
+      void publishNotification({
+        category: "website", severity: "success", title: "Đã thêm website",
+        message: "Website đã được lưu và đưa vào hàng đợi quét.",
+        websiteId: result.website?.id, link: result.website?.id ? `/websites/${result.website.id}` : "/websites",
+      });
       await loadWebsites();
     } catch {
       setModalError("Không thể kết nối máy chủ. Vui lòng thử lại.");
@@ -167,7 +181,6 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
 
   async function addCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("");
     setModalError("");
     try {
       const data = new FormData(event.currentTarget);
@@ -182,7 +195,12 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
       const result = (await response.json()) as { message?: string };
       if (!response.ok) { setModalError(result.message ?? "Không thể lưu khách hàng."); return; }
       setModalType(null);
-      setMessage(editingCustomer ? "Đã cập nhật thông tin khách hàng." : "Đã thêm khách hàng mới.");
+      void publishNotification({
+        category: "customer", severity: "success",
+        title: editingCustomer ? "Đã cập nhật khách hàng" : "Đã thêm khách hàng",
+        message: editingCustomer ? "Thông tin khách hàng đã được cập nhật." : "Khách hàng mới đã được lưu vào hệ thống.",
+        link: "/customers",
+      });
       setEditingCustomer(null);
       await loadCustomers();
     } catch {
@@ -197,9 +215,13 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
       const response = await fetch(`/api/websites/${websiteId}/scan`, { method: "POST" });
       const result = (await response.json()) as { message?: string };
       if (!response.ok) throw new Error(result.message ?? "Không thể bắt đầu quét.");
-      setMessage(result.message ?? "Đã đưa website vào hàng đợi quét.");
+      void publishNotification({ category: "scan", severity: "info", title: "Đã xếp hàng quét website", message: result.message ?? "Website đang chờ worker xử lý.", websiteId, link: `/websites/${websiteId}` });
       await loadWebsites();
       return { queued: true, websiteId };
+    } catch (reason) {
+      const errorMessage = reason instanceof Error ? reason.message : "Không thể bắt đầu quét.";
+      void publishNotification({ category: "scan", severity: "danger", title: "Không thể quét website", message: errorMessage, websiteId, link: `/websites/${websiteId}` });
+      return { queued: false, websiteId, error: errorMessage };
     } finally {
       setScanningIds((items) => items.filter((id) => id !== websiteId));
     }
@@ -208,15 +230,14 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
   async function queueAllScans() {
     if (scanningAll || websites.length === 0) return;
     setScanningAll(true);
-    setMessage("");
     try {
       const response = await fetch("/api/websites/scan-all", { method: "POST" });
       const result = (await response.json()) as { message?: string };
       if (!response.ok) throw new Error(result.message ?? "Không thể quét toàn bộ website.");
-      setMessage(result.message ?? "Đã đưa toàn bộ website vào hàng đợi quét.");
+      void publishNotification({ category: "scan", severity: "info", title: "Đã xếp hàng quét toàn bộ", message: result.message ?? "Toàn bộ website đang chờ worker xử lý.", link: "/websites" });
       await loadWebsites();
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "Không thể quét toàn bộ website.");
+      void publishNotification({ category: "scan", severity: "danger", title: "Không thể quét toàn bộ", message: reason instanceof Error ? reason.message : "Không thể quét toàn bộ website.", link: "/websites" });
     } finally {
       setScanningAll(false);
     }
@@ -259,8 +280,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
         </header>
 
         <main>
-          <section className="heading"><div><p>{pageInfo[0]}</p><h1>{pageInfo[1]}</h1><span>{pageInfo[2]}</span></div>{activePage === "Khách hàng" ? <button className="primary" onClick={() => { setEditingCustomer(null); setModalType("customer"); }}><Plus size={17} />Thêm khách hàng</button> : (activePage === "Tổng quan" || activePage === "Website") ? <div className="heading-actions">{activePage === "Website" && <button className="secondary bulk-scan" type="button" disabled={scanningAll || websites.length === 0} onClick={() => void queueAllScans()}><RefreshCw size={17} className={scanningAll ? "spin" : ""} />{scanningAll ? "Đang xếp hàng..." : "Quét toàn bộ"}</button>}<button className="primary" onClick={() => customers.length ? setModalType("website") : setMessage("Hãy tạo khách hàng trước khi thêm website.")}><Plus size={17} />Thêm website</button></div> : null}</section>
-          {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label="Đóng"><X size={15} /></button></div>}
+          <section className="heading"><div><p>{pageInfo[0]}</p><h1>{pageInfo[1]}</h1><span>{pageInfo[2]}</span></div>{activePage === "Khách hàng" ? <button className="primary" onClick={() => { setEditingCustomer(null); setModalType("customer"); }}><Plus size={17} />Thêm khách hàng</button> : (activePage === "Tổng quan" || activePage === "Website") ? <div className="heading-actions">{activePage === "Website" && <button className="secondary bulk-scan" type="button" disabled={scanningAll || websites.length === 0} onClick={() => void queueAllScans()}><RefreshCw size={17} className={scanningAll ? "spin" : ""} />{scanningAll ? "Đang xếp hàng..." : "Quét toàn bộ"}</button>}<button className="primary" onClick={() => customers.length ? setModalType("website") : void publishNotification({ category: "customer", severity: "warning", title: "Chưa có khách hàng", message: "Hãy tạo khách hàng trước khi thêm website.", link: "/customers" })}><Plus size={17} />Thêm website</button></div> : null}</section>
 
           {activePage === "Tổng quan" ? <>
           <section className="metrics" aria-label="Chỉ số tổng quan">
@@ -291,13 +311,12 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
             <article><span><ShieldCheck /></span><div><p>SSL & tên miền</p><strong>0 cảnh báo</strong><small>Chưa có website cần theo dõi</small></div></article>
             <article><span><CheckCircle2 /></span><div><p>Báo cáo tháng</p><strong>Chưa có báo cáo</strong><small>Báo cáo sẽ được tạo từ dữ liệu thật</small></div></article>
           </section>
-          </> : <section className="panel module-page">
-            <div className="panel-head"><div><h2>{pageInfo[1]}</h2><p>Dữ liệu được đồng bộ từ PostgreSQL</p></div><span className="record-count">{activePage === "Khách hàng" ? customers.length : activePage === "Công việc" || activePage === "Báo cáo" ? 0 : websites.length} mục</span></div>
+          </> : activePage === "Báo cáo" ? <ReportManager websites={websites} /> : <section className="panel module-page">
+            <div className="panel-head"><div><h2>{pageInfo[1]}</h2><p>Dữ liệu được đồng bộ từ PostgreSQL</p></div><span className="record-count">{activePage === "Khách hàng" ? customers.length : activePage === "Công việc" ? 0 : websites.length} mục</span></div>
             {activePage === "Website" && <div className="panel-search-row"><label className="search table-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm website hoặc khách hàng..." /></label></div>}
             {activePage === "Khách hàng" && <div className="module-list">{customers.map((customer) => <button type="button" className="module-row customer-row" key={customer.id} onClick={() => { setEditingCustomer(customer); setModalType("customer"); }}><span className="row-icon"><UsersRound size={18} /></span><span><strong>{customer.name}</strong><small>{customer.contactName || "Chưa có người liên hệ"}{customer.contactEmail ? ` · ${customer.contactEmail}` : ""}{customer.contactPhone ? ` · ${customer.contactPhone}` : ""}</small></span><span className="customer-meta"><b>{customer.websiteCount}</b> website<small>{customer.status === "paused" ? "Tạm dừng" : "Đang hoạt động"}</small></span><Pencil size={16} /></button>)}{!loading && customers.length === 0 && <div className="empty-state"><UsersRound size={25} /><strong>Chưa có khách hàng</strong><span>Bấm “Thêm khách hàng” để tạo công ty đầu tiên.</span></div>}</div>}
             {activePage === "Website" && <div className="module-list">{filtered.map((site) => <div className="module-row" key={site.id}><span className="row-icon"><Globe2 size={18} /></span><Link className="site-link" href={`/websites/${site.id}`}><strong>{websiteAddress(site)}</strong><small>{site.customerName} · {site.lastCheckedAt ? `Uptime ${Number(site.uptimePercent).toFixed(2)}%` : "Chưa có kết quả quét"}</small></Link><span className={`status ${site.status}`}>{statusLabel[site.status]}</span><button type="button" className="scan-action" disabled={site.status === "scanning" || scanningIds.includes(site.id)} onClick={() => void queueScan(site.id)}><RefreshCw size={14} className={site.status === "scanning" ? "spin" : ""} />{site.status === "scanning" ? "Đang quét" : "Quét ngay"}</button></div>)}</div>}
             {activePage === "Công việc" && <div className="empty-state"><ListChecks size={25} /><strong>Chưa có công việc</strong><span>Công việc thật sẽ được hiển thị tại đây.</span></div>}
-            {activePage === "Báo cáo" && <div className="empty-state"><FileBarChart size={25} /><strong>Chưa có báo cáo</strong><span>Báo cáo sẽ được tạo sau khi hệ thống có dữ liệu.</span></div>}
           </section>}
         </main>
       </div>

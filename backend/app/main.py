@@ -10,6 +10,7 @@ from .database import close_pool, connection, ensure_scan_queue_schema, open_poo
 from .malware.router import router as malware_router
 from .monitoring.router import router as monitoring_router
 from .notifications.router import router as notifications_router
+from .reports.router import router as reports_router
 from .websites.router import router as websites_router
 from .websites.utils import normalize_website_address
 from .wordpress_api.router import router as wordpress_router
@@ -36,6 +37,7 @@ app.add_middleware(
 app.include_router(customers_router)
 app.include_router(monitoring_router)
 app.include_router(notifications_router)
+app.include_router(reports_router)
 app.include_router(websites_router)
 app.include_router(wordpress_router)
 app.include_router(malware_router)

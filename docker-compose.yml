@@ -42,6 +42,9 @@ services:
       DATABASE_URL: postgres://siteops:${POSTGRES_PASSWORD:-siteops_dev_change}@db:5432/siteops
       WORDPRESS_CREDENTIALS_KEY: ${WORDPRESS_CREDENTIALS_KEY:-siteops-dev-wordpress-key-change-me}
       INTERNAL_WORKER_TOKEN: ${INTERNAL_WORKER_TOKEN:-siteops-worker-dev-token}
+      REPORT_UPLOAD_DIR: /app/data/reports
+    volumes:
+      - report_files:/app/data/reports
     ports:
       - "${API_PORT:-4000}:4000"
     depends_on:
@@ -96,3 +99,4 @@ services:
 volumes:
   postgres_data:
   pgadmin_data:
+  report_files:

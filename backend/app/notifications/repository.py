@@ -9,17 +9,19 @@ def create_notification(
     message: str,
     website_id: int | None = None,
     link: str | None = None,
-) -> None:
+) -> dict | None:
     with connection() as conn:
-        conn.execute(
+        return conn.execute(
             """
             INSERT INTO notifications
               (website_id, event_key, category, severity, title, message, link)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_key) DO NOTHING
+            RETURNING id, website_id AS "websiteId", category, severity, title,
+              message, link, is_read AS "isRead", created_at AS "createdAt"
             """,
             (website_id, event_key, category, severity, title, message, link),
-        )
+        ).fetchone()
 
 
 def list_recent(limit: int) -> dict:
@@ -38,6 +40,18 @@ def list_recent(limit: int) -> dict:
             "SELECT COUNT(*)::int AS total FROM notifications WHERE is_read = FALSE"
         ).fetchone()["total"]
     return {"notifications": rows, "unreadCount": unread}
+
+
+def get_by_event_key(event_key: str) -> dict | None:
+    with connection() as conn:
+        return conn.execute(
+            """
+            SELECT id, website_id AS "websiteId", category, severity, title,
+              message, link, is_read AS "isRead", created_at AS "createdAt"
+            FROM notifications WHERE event_key = %s
+            """,
+            (event_key,),
+        ).fetchone()
 
 
 def mark_read(notification_id: int) -> dict | None:
