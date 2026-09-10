@@ -52,10 +52,11 @@ def get_report(report_id: int):
 
 
 @router.get("/{report_id}/pdf")
-def download_report_pdf(report_id: int):
+def download_report_pdf(report_id: int, preview: bool = False):
     try:
         content, filename = service.report_pdf(report_id)
-        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        disposition = "inline" if preview else "attachment"
+        headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
         return StreamingResponse(BytesIO(content), media_type="application/pdf", headers=headers)
     except ServiceError as error:
         return message(str(error), error.status_code)

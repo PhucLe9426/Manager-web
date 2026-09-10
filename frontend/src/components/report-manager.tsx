@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Download, FileBarChart, FileText, ImagePlus, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Download, Eye, FileBarChart, FileText, ImagePlus, Plus, Trash2, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { publishNotification } from "@/lib/notifications";
 
@@ -95,6 +95,7 @@ export function ReportManager({ websites }: { websites: Website[] }) {
   const [loading, setLoading] = useState(true);
   const [context, setContext] = useState<ReportContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
+  const [previewReport, setPreviewReport] = useState<Report | null>(null);
 
   const selectedWebsite = websites.find((website) => website.id === Number(websiteId));
   const periodSeoPosts = useMemo(() => (context?.seoScan?.posts ?? []).filter((post) => {
@@ -116,6 +117,18 @@ export function ReportManager({ websites }: { websites: Website[] }) {
   }, []);
 
   useEffect(() => { void loadReports(); }, [loadReports]);
+
+  useEffect(() => {
+    if (!previewReport) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setPreviewReport(null); };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [previewReport]);
 
   useEffect(() => {
     if (!websiteId) { setContext(null); return; }
@@ -243,9 +256,16 @@ export function ReportManager({ websites }: { websites: Website[] }) {
 
     <section className="panel report-list">
       <div className="panel-head"><div><h2>Báo cáo đã lưu</h2><p>Dữ liệu được lưu trong PostgreSQL</p></div><span className="record-count">{reports.length} mục</span></div>
-      {loading ? <div className="empty-state"><span>Đang tải báo cáo...</span></div> : reports.length === 0 ? <div className="empty-state"><FileBarChart size={25} /><strong>Chưa có báo cáo</strong><span>Điền biểu mẫu bên trên để tạo báo cáo đầu tiên.</span></div> : <div className="report-rows">{reports.map((report) => <article key={report.id}>
-        <span className="row-icon"><FileText size={18} /></span><div><strong>{report.title}</strong><small>{report.url} · {report.customerName} · {report.itemCount} công việc{report.attachmentCount ? ` · ${report.attachmentCount} ảnh` : ""}</small></div><time>{displayDate(report.periodStart)} - {displayDate(report.periodEnd)}</time><a className="secondary" href={`/api/reports/${report.id}/pdf`} target="_blank" rel="noreferrer"><Download size={15} />Tải PDF</a><button className="report-delete" type="button" onClick={() => void deleteReport(report.id)} aria-label={`Xóa ${report.title}`}><Trash2 size={16} /></button>
+      {loading ? <div className="empty-state"><span>Đang tải báo cáo...</span></div> : reports.length === 0 ? <div className="empty-state"><FileBarChart size={25} /><strong>Chưa có báo cáo</strong><span>Điền biểu mẫu bên trên để tạo báo cáo đầu tiên.</span></div> : <div className="report-rows">{reports.map((report) => <article className="report-row-clickable" key={report.id} role="button" tabIndex={0} aria-label={`Xem trước ${report.title}`} onClick={() => setPreviewReport(report)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPreviewReport(report); } }}>
+        <span className="row-icon"><FileText size={18} /></span><div><strong>{report.title}</strong><small>{report.url} · {report.customerName} · {report.itemCount} công việc{report.attachmentCount ? ` · ${report.attachmentCount} ảnh` : ""}</small></div><time>{displayDate(report.periodStart)} - {displayDate(report.periodEnd)}</time><span className="report-preview-hint"><Eye size={14} />Xem trước</span><a className="secondary" href={`/api/reports/${report.id}/pdf`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Download size={15} />Tải PDF</a><button className="report-delete" type="button" onClick={(event) => { event.stopPropagation(); void deleteReport(report.id); }} aria-label={`Xóa ${report.title}`}><Trash2 size={16} /></button>
       </article>)}</div>}
     </section>
+
+    {previewReport && <div className="report-pdf-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setPreviewReport(null)}>
+      <section className="report-pdf-modal" role="dialog" aria-modal="true" aria-label={`Xem trước ${previewReport.title}`}>
+        <header><div><span><Eye size={17} /></span><div><strong>{previewReport.title}</strong><small>{previewReport.url} · {displayDate(previewReport.periodStart)} - {displayDate(previewReport.periodEnd)}</small></div></div><div><a className="secondary" href={`/api/reports/${previewReport.id}/pdf`} target="_blank" rel="noreferrer"><Download size={15} />Tải PDF</a><button className="icon-button" type="button" onClick={() => setPreviewReport(null)} aria-label="Đóng xem trước"><X size={18} /></button></div></header>
+        <iframe src={`/api/reports/${previewReport.id}/pdf?preview=true#view=FitH&toolbar=0`} title={`Bản xem trước ${previewReport.title}`} />
+      </section>
+    </div>}
   </div>;
 }

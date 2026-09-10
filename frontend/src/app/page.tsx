@@ -45,6 +45,11 @@ const navItems = [
 
 const fallbackWebsites: Website[] = [];
 
+function transientNotificationKey(name: string) {
+  const thirtyMinuteBucket = Math.floor(Date.now() / (30 * 60 * 1000));
+  return `ui:${name}:${thirtyMinuteBucket}`;
+}
+
 const statusLabel = { healthy: "Ổn định", attention: "Cần xử lý", watching: "Theo dõi", monitoring: "Đang thiết lập", scanning: "Đang quét", failed: "Quét thất bại" };
 
 function Score({ value }: { value: number | null }) {
@@ -90,7 +95,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
     } catch {
       if (!websiteLoadFailed.current) {
         websiteLoadFailed.current = true;
-        void publishNotification({ category: "system", severity: "danger", title: "Không thể tải website", message: "Hệ thống sẽ tự động thử lại." });
+        void publishNotification({ category: "system", severity: "danger", title: "Không thể tải website", message: "Hệ thống sẽ tự động thử lại.", eventKey: transientNotificationKey("website-load-failed") });
       }
     } finally {
       setLoading(false);
@@ -107,7 +112,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
     } catch {
       if (!customerLoadFailed.current) {
         customerLoadFailed.current = true;
-        void publishNotification({ category: "system", severity: "danger", title: "Không thể tải khách hàng", message: "Hệ thống sẽ tự động thử lại." });
+        void publishNotification({ category: "system", severity: "danger", title: "Không thể tải khách hàng", message: "Hệ thống sẽ tự động thử lại.", eventKey: transientNotificationKey("customer-load-failed") });
       }
     }
   }, []);

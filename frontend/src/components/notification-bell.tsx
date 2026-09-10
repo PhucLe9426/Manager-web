@@ -15,6 +15,17 @@ function formatNotificationDate(value: string) {
   return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
+function collapseRepeatedSystemNotifications(items: NotificationItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (item.category !== "system") return true;
+    const signature = `${item.severity}\u0000${item.title}\u0000${item.message}\u0000${item.websiteId ?? ""}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
@@ -27,7 +38,7 @@ export function NotificationBell() {
       const response = await fetch("/api/notifications?limit=20", { cache: "no-store" });
       if (!response.ok) return;
       const result = await response.json() as { notifications: NotificationItem[]; unreadCount: number };
-      setItems(result.notifications);
+      setItems(collapseRepeatedSystemNotifications(result.notifications));
       setUnreadCount(result.unreadCount);
     } finally {
       setLoading(false);
