@@ -38,6 +38,13 @@ type Customer = {
   websiteCount: number;
 };
 
+type ReportSummary = {
+  id: number;
+  title: string;
+  customerName: string;
+  createdAt: string;
+};
+
 const navItems = [
   ["Tổng quan", LayoutDashboard, "/"], ["Khách hàng", UsersRound, "/customers"], ["Website", Globe2, "/websites"],
   ["Công việc", ListChecks, "/tasks"], ["Báo cáo", FileBarChart, "/reports"],
@@ -72,6 +79,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
   const { theme, toggleTheme } = useTheme();
   const [websites, setWebsites] = useState<Website[]>(fallbackWebsites);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [reports, setReports] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalType, setModalType] = useState<"customer" | "website" | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -117,11 +125,22 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
     }
   }, []);
 
+  const loadReports = useCallback(async () => {
+    try {
+      const response = await fetch("/api/reports", { cache: "no-store" });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { reports?: ReportSummary[] };
+      setReports(data.reports ?? []);
+    } catch {
+      // The overview remains usable if the report summary is temporarily unavailable.
+    }
+  }, []);
+
   useEffect(() => {
-    void Promise.all([loadWebsites(), loadCustomers()]);
+    void Promise.all([loadWebsites(), loadCustomers(), loadReports()]);
     const timer = window.setInterval(() => void loadWebsites(), 10000);
     return () => window.clearInterval(timer);
-  }, [loadCustomers, loadWebsites]);
+  }, [loadCustomers, loadReports, loadWebsites]);
 
   useEffect(() => {
     if (modalType) setModalError("");
@@ -153,6 +172,13 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
   const desktopScores = websites.map((site) => site.desktopPerformanceScore).filter((score): score is number => score !== null);
   const mobileHealthScore = mobileScores.length ? Math.round(mobileScores.reduce((sum, score) => sum + score, 0) / mobileScores.length) : null;
   const desktopHealthScore = desktopScores.length ? Math.round(desktopScores.reduce((sum, score) => sum + score, 0) / desktopScores.length) : null;
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const monthlyReports = reports.filter((report) => {
+    const createdAt = new Date(report.createdAt);
+    return createdAt.getMonth() === currentMonth && createdAt.getFullYear() === currentYear;
+  });
+  const latestReport = reports[0];
   const pageInfo = {
     "Tổng quan": ["Trung tâm vận hành", "Tổng quan hệ thống", "Theo dõi tình trạng website và công việc của đội ngũ."],
     "Khách hàng": ["Quản lý dữ liệu", "Danh sách khách hàng", "Thông tin liên hệ, gói dịch vụ và website đang phụ trách."],
@@ -315,7 +341,7 @@ export function DashboardApp({ initialPage = "Tổng quan" }: { initialPage?: (t
           <section className="quick-cards">
             <article><span><Server /></span><div><p>Backup gần nhất</p><strong>Chưa có dữ liệu</strong><small>Thiết lập sau khi thêm website</small></div></article>
             <article><span><ShieldCheck /></span><div><p>SSL & tên miền</p><strong>0 cảnh báo</strong><small>Chưa có website cần theo dõi</small></div></article>
-            <article><span><CheckCircle2 /></span><div><p>Báo cáo tháng</p><strong>Chưa có báo cáo</strong><small>Báo cáo sẽ được tạo từ dữ liệu thật</small></div></article>
+            <article><span><CheckCircle2 /></span><div><p>Báo cáo tháng</p><strong>{monthlyReports.length ? `${monthlyReports.length} báo cáo đã tạo` : "Chưa có báo cáo trong tháng"}</strong><small>{latestReport ? `Gần nhất: ${latestReport.customerName} · ${new Intl.DateTimeFormat("vi-VN").format(new Date(latestReport.createdAt))}` : "Báo cáo sẽ được tạo từ dữ liệu thật"}</small></div><Link className="quick-card-action" href="/reports" aria-label="Xem danh sách báo cáo"><ChevronRight size={17} /></Link></article>
           </section>
           </> : activePage === "Báo cáo" ? <ReportManager websites={websites} /> : <section className="panel module-page">
             <div className="panel-head"><div><h2>{pageInfo[1]}</h2><p>Dữ liệu được đồng bộ từ PostgreSQL</p></div><span className="record-count">{activePage === "Khách hàng" ? customers.length : activePage === "Công việc" ? 0 : websites.length} mục</span></div>
